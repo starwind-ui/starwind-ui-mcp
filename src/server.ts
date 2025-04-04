@@ -38,7 +38,7 @@ const transport = new StdioServerTransport();
 server
 	.connect(transport)
 	.then(() => {
-		console.log(`Starwind UI MCP Server running (using stdio transport)`);
+		console.error(`Starwind UI MCP Server running (using stdio transport)`);
 	})
 	.catch(console.error);
 
