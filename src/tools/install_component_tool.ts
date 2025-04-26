@@ -84,16 +84,13 @@ export const installComponentTool = {
 
 		// Example components
 		const popularComponents = [
-			"alert",
+			"accordion",
 			"button",
-			"badge",
-			"dialog",
-			"input",
-			"label",
-			"switch",
+			"card",
+			"breadcrumb",
+			"dropdown",
+			"select",
 			"tabs",
-			"textarea",
-			"tooltip",
 		];
 
 		// Filtered list of requested components that are included in the popular list

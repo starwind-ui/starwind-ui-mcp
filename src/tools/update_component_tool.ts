@@ -43,7 +43,8 @@ export const updateComponentTool = {
 			},
 			options: {
 				type: "array",
-				description: "Additional options for updating (e.g., '--all' to update all components)",
+				description:
+					"Additional options for updating (e.g., '--all' to update all components, '--yes' to skip confirmation prompts)",
 				items: {
 					type: "string",
 				},
@@ -79,19 +80,18 @@ export const updateComponentTool = {
 		// Common update options
 		const commonOptions = [
 			"--all", // Update all components
+			"--yes", // Skip confirmation prompts
 		];
 
 		// Example components
 		const popularComponents = [
+			"accordion",
 			"button",
 			"card",
-			"dialog",
+			"breadcrumb",
 			"dropdown",
-			"form",
-			"input",
-			"navbar",
-			"sidebar",
-			"table",
+			"select",
+			"tabs",
 		];
 
 		return {
@@ -102,14 +102,13 @@ export const updateComponentTool = {
 			availableOptions: commonOptions,
 			popularComponents,
 			recommendations: {
-				single: `${baseCommand} ${component}`,
-				multiple: components.length > 1 ? `${baseCommand} ${components.join(" ")}` : null,
-				all: `${baseCommand} --all`,
-				checkForUpdates: `${baseCommand} --dry-run`,
+				single: `${baseCommand} ${component} --yes`,
+				multiple: components.length > 1 ? `${baseCommand} ${components.join(" ")} --yes` : null,
+				all: `${baseCommand} --all --yes`,
 			},
 			instructions:
 				"Run one of these commands in your project directory to update Starwind UI components. You can combine multiple components in a single command.",
-			note: "The update command will check for and apply updates to the specified components. Use --dry-run to preview updates before applying them.",
+			note: "The update command will check for and apply updates to the specified components and will overwrite existing files. Use --yes to skip confirmation prompts.",
 		};
 	},
 };
