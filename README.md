@@ -1,5 +1,7 @@
 # Starwind UI MCP Server
 
+[![smithery badge](https://smithery.ai/badge/@Boston343/starwind-ui-mcp)](https://smithery.ai/server/@Boston343/starwind-ui-mcp)
+
 A TypeScript implementation of a Model Context Protocol (MCP) server for Starwind UI, providing tools to help developers work with Starwind UI components.
 
 ## Quick Start
@@ -13,6 +15,14 @@ pnpm build
 
 # Start the server
 pnpm start
+```
+
+### Installing via Smithery
+
+To install Starwind UI MCP Server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@Boston343/starwind-ui-mcp):
+
+```bash
+npx -y @smithery/cli install @Boston343/starwind-ui-mcp --client claude
 ```
 
 ### Setup Your IDE
