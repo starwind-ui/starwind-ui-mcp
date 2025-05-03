@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/starwind-ui-starwind-ui-mcp-badge.png)](https://mseep.ai/app/starwind-ui-starwind-ui-mcp)
+
 # Starwind UI MCP Server
 
 [![smithery badge](https://smithery.ai/badge/@Boston343/starwind-ui-mcp)](https://smithery.ai/server/@Boston343/starwind-ui-mcp)
