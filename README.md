@@ -1,8 +1,6 @@
-[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/starwind-ui-starwind-ui-mcp-badge.png)](https://mseep.ai/app/starwind-ui-starwind-ui-mcp)
-
 # Starwind UI MCP Server
 
-[![smithery badge](https://smithery.ai/badge/@Boston343/starwind-ui-mcp)](https://smithery.ai/server/@Boston343/starwind-ui-mcp)
+[![smithery badge](https://smithery.ai/badge/@Boston343/starwind-ui-mcp)](https://smithery.ai/server/@Boston343/starwind-ui-mcp) [![Verified on MseeP](https://mseep.ai/badge.svg)](https://mseep.ai/app/9878a189-46ec-462c-903f-a72276f707e3)
 
 A TypeScript implementation of a Model Context Protocol (MCP) server for Starwind UI, providing tools to help developers work with Starwind UI components.
 
@@ -102,3 +100,7 @@ To add your own tools to the server:
 ## License
 
 MIT License - See LICENSE file for details.
+
+## Security
+
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/starwind-ui-starwind-ui-mcp-badge.png)](https://mseep.ai/app/starwind-ui-starwind-ui-mcp)
