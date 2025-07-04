@@ -5,5 +5,5 @@ export default {
 	singleQuote: false,
 	tabWidth: 2,
 	trailingComma: "all",
-	useTabs: true,
+	useTabs: false,
 };
