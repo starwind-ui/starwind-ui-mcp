@@ -2,20 +2,61 @@
 
 [![smithery badge](https://smithery.ai/badge/@starwind-ui/starwind-ui-mcp)](https://smithery.ai/server/@starwind-ui/starwind-ui-mcp) [![Verified on MseeP](https://mseep.ai/badge.svg)](https://mseep.ai/app/9878a189-46ec-462c-903f-a72276f707e3)
 
-A TypeScript implementation of a Model Context Protocol (MCP) server for Starwind UI, providing tools to help developers work with Starwind UI components.
+A TypeScript implementation of a Model Context Protocol (MCP) server for [Starwind UI](https://starwind.dev/), providing tools to help developers work with Starwind UI components when leveraging AI tools like Claude, Windsurf, Cursor, and more.
 
 ## Quick Start
 
-```bash
-# Install dependencies
-pnpm install
+### Using npx
 
-# Build the TypeScript code
-pnpm build
+Instructions to set up your IDE to use a local MCP server vary by IDE. Here are examples for different platforms:
 
-# Start the server
-pnpm start
+**Windsurf:**
+
+```json title="mcp_config.json"
+{
+	"mcpServers": {
+		"starwind-ui": {
+			"command": "npx",
+			"args": ["-y", "@starwind-ui/mcp"],
+			"env": {}
+		}
+	}
+}
 ```
+
+**Cursor:**
+
+```json title="mcp.json"
+{
+	"mcpServers": {
+		"starwind-ui": {
+			"command": "npx",
+			"args": ["-y", "@starwind-ui/mcp"],
+			"env": {}
+		}
+	}
+}
+```
+
+**Claude Code:**
+
+```json title=".mcp.json"
+{
+	"mcpServers": {
+		"starwind-ui": {
+			"command": "npx",
+			"args": ["-y", "@starwind-ui/mcp"],
+			"env": {}
+		}
+	}
+}
+```
+
+Detailed instructions:
+
+- [Windsurf MCP Setup](https://docs.windsurf.com/windsurf/cascade/mcp)
+- [Cursor MCP Setup](https://docs.cursor.com/context/model-context-protocol)
+- [Claude Code MCP Setup](https://docs.anthropic.com/en/docs/claude-code/mcp)
 
 ### Installing via Smithery
 
@@ -25,26 +66,18 @@ To install Starwind UI MCP Server for Claude Desktop automatically via [Smithery
 npx -y @smithery/cli install @starwind-ui/starwind-ui-mcp --client claude
 ```
 
-### Setup Your IDE
 
-Instructions to set up your IDE to use a local MCP server vary by IDE. Here is an example for Windsurf:
 
-```json title="mcp_config.json"
-{
-	"mcpServers": {
-		"starwind ui": {
-			"command": "node",
-			"args": ["c:\\path\\to\\folder\\starwind-ui-mcp\\dist\\server.js"],
-			"env": {}
-		}
-	}
-}
-```
+## Available Tools
 
-Detailed instructions:
-
-- [Windsurf MCP Setup](https://docs.codeium.com/windsurf/mcp)
-- [Cursor MCP Setup](https://docs.cursor.com/context/model-context-protocol)
+| Tool Name             | Description                                                       |
+| --------------------- | ----------------------------------------------------------------- |
+| `init_project`        | Initializes a new Starwind UI project                             |
+| `install_component`   | Generates installation commands for Starwind UI components        |
+| `update_component`    | Generates update commands for Starwind UI components              |
+| `get_documentation`   | Returns documentation links for Starwind UI components and guides |
+| `fetch_llm_data`      | Fetches LLM data from starwind.dev (rate limited, with caching)   |
+| `get_package_manager` | Detects and returns the current package manager information       |
 
 ## What is MCP?
 
@@ -58,17 +91,6 @@ The Model Context Protocol (MCP) is a protocol for extending AI capabilities thr
 - **LLM Data Fetcher** - Retrieve Starwind UI information for LLMs with caching and rate limiting
 - **TypeScript Implementation** - Built with TypeScript for better type safety and developer experience
 - **Standard I/O Transport** - Uses stdio for communication with AI assistants
-
-## Available Tools
-
-| Tool Name             | Description                                                       |
-| --------------------- | ----------------------------------------------------------------- |
-| `init_project`        | Initializes a new Starwind UI project                             |
-| `install_component`   | Generates installation commands for Starwind UI components        |
-| `update_component`    | Generates update commands for Starwind UI components              |
-| `get_documentation`   | Returns documentation links for Starwind UI components and guides |
-| `fetch_llm_data`      | Fetches LLM data from starwind.dev (rate limited, with caching)   |
-| `get_package_manager` | Detects and returns the current package manager information       |
 
 ## Development
 
