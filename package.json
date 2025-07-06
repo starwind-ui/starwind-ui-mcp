@@ -1,9 +1,31 @@
 {
   "name": "@starwind-ui/mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "The Starwind UI MCP Server",
   "type": "module",
   "main": "dist/server.js",
+  "bin": {
+    "starwind-ui-mcp": "./dist/server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/starwind-ui/starwind-ui-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/starwind-ui/starwind-ui-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "starwind",
+    "starwind ui",
+    "starwind mcp",
+    "astro",
+    "cursor",
+    "claude",
+    "windsurf",
+    "ai-tools"
+  ],
   "author": {
     "name": "webreaper",
     "url": "https://x.com/BowTiedWebReapr"
@@ -18,22 +40,26 @@
     "clean:deploy": "tsx scripts/clean_dist.ts && tsx scripts/copy_deploy.ts",
     "watch": "tsc --watch",
     "format": "pnpm format:write",
-    "format:write": "prettier --write \"**/*.{ts,js,mjs,cjs}\" --cache",
-    "lint": "eslint src --ext ts --fix"
+    "format:write": "eslint . --fix && prettier --write \"**/*.{ts,js,mjs,cjs}\" --cache",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.5.0",
-    "dotenv": "^16.4.1",
-    "express": "^4.18.2"
+    "dotenv": "^16.4.1"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
+    "@eslint/js": "^9.30.1",
     "@types/node": "^20.11.0",
     "@vitest/coverage-v8": "^3.0.8",
-    "eslint": "^8.56.0",
+    "eslint": "^9.30.1",
+    "eslint-plugin-prettier": "^5.5.1",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "globals": "^16.3.0",
     "nodemon": "^3.0.3",
     "prettier": "^3.5.3",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.2",
+    "typescript-eslint": "^8.35.1",
     "vitest": "^3.0.8"
   }
 }

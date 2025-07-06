@@ -1,9 +1,10 @@
 /**
  * Package Manager Tool for the MCP Server
  */
-import { detectPackageManager } from "../utils/package_manager.js";
 import { existsSync } from "fs";
 import { resolve } from "path";
+
+import { detectPackageManager } from "../utils/package_manager.js";
 
 /**
  * Debug flag to enable/disable console logging

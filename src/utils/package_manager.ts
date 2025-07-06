@@ -10,59 +10,59 @@ export type PackageManager = "npm" | "yarn" | "pnpm";
  * Configuration options for package manager detection
  */
 export interface PackageManagerOptions {
-	/** Root directory to check for lock files (defaults to process.cwd()) */
-	cwd?: string;
-	/** Default package manager to use if detection fails (defaults to 'npm') */
-	defaultManager?: PackageManager;
+  /** Root directory to check for lock files (defaults to process.cwd()) */
+  cwd?: string;
+  /** Default package manager to use if detection fails (defaults to 'npm') */
+  defaultManager?: PackageManager;
 }
 
 /**
  * Contains information about the detected package manager
  */
 export interface PackageManagerInfo {
-	/** The name of the detected package manager */
-	name: PackageManager;
-	/** The command to use for installing packages */
-	installCmd: string;
-	/** The command to use for adding a package */
-	addCmd: string;
-	/** The command to use for removing a package */
-	removeCmd: string;
-	/** The command to use for running scripts */
-	runCmd: string;
+  /** The name of the detected package manager */
+  name: PackageManager;
+  /** The command to use for installing packages */
+  installCmd: string;
+  /** The command to use for adding a package */
+  addCmd: string;
+  /** The command to use for removing a package */
+  removeCmd: string;
+  /** The command to use for running scripts */
+  runCmd: string;
 }
 
 /**
  * Map of package managers to their lock files
  */
 const LOCK_FILES: Record<PackageManager, string> = {
-	npm: "package-lock.json",
-	yarn: "yarn.lock",
-	pnpm: "pnpm-lock.yaml",
+  npm: "package-lock.json",
+  yarn: "yarn.lock",
+  pnpm: "pnpm-lock.yaml",
 };
 
 /**
  * Map of package managers to their command information
  */
 const PACKAGE_MANAGER_COMMANDS: Record<PackageManager, Omit<PackageManagerInfo, "name">> = {
-	npm: {
-		installCmd: "npm install",
-		addCmd: "npm install",
-		removeCmd: "npm uninstall",
-		runCmd: "npm run",
-	},
-	yarn: {
-		installCmd: "yarn",
-		addCmd: "yarn add",
-		removeCmd: "yarn remove",
-		runCmd: "yarn",
-	},
-	pnpm: {
-		installCmd: "pnpm install",
-		addCmd: "pnpm add",
-		removeCmd: "pnpm remove",
-		runCmd: "pnpm",
-	},
+  npm: {
+    installCmd: "npm install",
+    addCmd: "npm install",
+    removeCmd: "npm uninstall",
+    runCmd: "npm run",
+  },
+  yarn: {
+    installCmd: "yarn",
+    addCmd: "yarn add",
+    removeCmd: "yarn remove",
+    runCmd: "yarn",
+  },
+  pnpm: {
+    installCmd: "pnpm install",
+    addCmd: "pnpm add",
+    removeCmd: "pnpm remove",
+    runCmd: "pnpm",
+  },
 };
 
 /**
@@ -85,35 +85,35 @@ const PACKAGE_MANAGER_COMMANDS: Record<PackageManager, Omit<PackageManagerInfo, 
  * ```
  */
 export function detectPackageManager(options: PackageManagerOptions = {}): PackageManagerInfo {
-	const { cwd = process.cwd(), defaultManager = "npm" } = options;
+  const { cwd = process.cwd(), defaultManager = "npm" } = options;
 
-	// Determine priorities for checking lock files
-	const packageManagers: PackageManager[] = ["pnpm", "yarn", "npm"];
+  // Determine priorities for checking lock files
+  const packageManagers: PackageManager[] = ["pnpm", "yarn", "npm"];
 
-	// Detected package managers
-	const detected: PackageManager[] = [];
+  // Detected package managers
+  const detected: PackageManager[] = [];
 
-	// Check for each lock file
-	for (const pm of packageManagers) {
-		const lockFile = LOCK_FILES[pm];
-		const lockFilePath = resolve(cwd, lockFile);
+  // Check for each lock file
+  for (const pm of packageManagers) {
+    const lockFile = LOCK_FILES[pm];
+    const lockFilePath = resolve(cwd, lockFile);
 
-		console.log(`Checking for ${lockFile} at ${lockFilePath}`);
+    console.log(`Checking for ${lockFile} at ${lockFilePath}`);
 
-		if (existsSync(lockFilePath)) {
-			detected.push(pm);
-			// Found a lock file, no need to check others
-			break;
-		}
-	}
+    if (existsSync(lockFilePath)) {
+      detected.push(pm);
+      // Found a lock file, no need to check others
+      break;
+    }
+  }
 
-	// Return the first detected package manager or default
-	const packageManager = detected.length > 0 ? detected[0] : defaultManager;
+  // Return the first detected package manager or default
+  const packageManager = detected.length > 0 ? detected[0] : defaultManager;
 
-	return {
-		name: packageManager,
-		...PACKAGE_MANAGER_COMMANDS[packageManager],
-	};
+  return {
+    name: packageManager,
+    ...PACKAGE_MANAGER_COMMANDS[packageManager],
+  };
 }
 
 /**
@@ -133,23 +133,23 @@ export function detectPackageManager(options: PackageManagerOptions = {}): Packa
  * ```
  */
 export function getPackageManagerCommand(
-	action: "install" | "add" | "remove" | "run",
-	options: PackageManagerOptions = {},
+  action: "install" | "add" | "remove" | "run",
+  options: PackageManagerOptions = {},
 ): string {
-	const pmInfo = detectPackageManager(options);
+  const pmInfo = detectPackageManager(options);
 
-	switch (action) {
-		case "install":
-			return pmInfo.installCmd;
-		case "add":
-			return pmInfo.addCmd;
-		case "remove":
-			return pmInfo.removeCmd;
-		case "run":
-			return pmInfo.runCmd;
-		default:
-			throw new Error(`Unknown action: ${action}`);
-	}
+  switch (action) {
+    case "install":
+      return pmInfo.installCmd;
+    case "add":
+      return pmInfo.addCmd;
+    case "remove":
+      return pmInfo.removeCmd;
+    case "run":
+      return pmInfo.runCmd;
+    default:
+      throw new Error(`Unknown action: ${action}`);
+  }
 }
 
 /**
@@ -167,16 +167,16 @@ export function getPackageManagerCommand(
  * ```
  */
 export function getRunCommand(scriptName: string, options: PackageManagerOptions = {}): string {
-	const pmInfo = detectPackageManager(options);
+  const pmInfo = detectPackageManager(options);
 
-	switch (pmInfo.name) {
-		case "npm":
-			return `${pmInfo.runCmd} ${scriptName}`;
-		case "yarn":
-			return `${pmInfo.runCmd} ${scriptName}`;
-		case "pnpm":
-			return `${pmInfo.runCmd} ${scriptName}`;
-		default:
-			return `${pmInfo.runCmd} ${scriptName}`;
-	}
+  switch (pmInfo.name) {
+    case "npm":
+      return `${pmInfo.runCmd} ${scriptName}`;
+    case "yarn":
+      return `${pmInfo.runCmd} ${scriptName}`;
+    case "pnpm":
+      return `${pmInfo.runCmd} ${scriptName}`;
+    default:
+      return `${pmInfo.runCmd} ${scriptName}`;
+  }
 }
