@@ -68,10 +68,12 @@ npx -y @smithery/cli install @starwind-ui/starwind-ui-mcp --client claude
 
 ## Available Tools
 
-| Tool Name       | Description                                                                   |
-| --------------- | ----------------------------------------------------------------------------- |
-| `starwind_docs` | Fetches live documentation from starwind.dev with caching and topic filtering |
-| `starwind_add`  | Generates validated install commands with package manager detection           |
+| Tool Name                    | Description                                                                   |
+| ---------------------------- | ----------------------------------------------------------------------------- |
+| `starwind_init`              | Initializes a Starwind UI project (Pro by default). Use this FIRST.           |
+| `starwind_docs`              | Fetches live documentation from starwind.dev with caching and topic filtering |
+| `starwind_add`               | Generates validated install commands with package manager detection           |
+| `search_starwind_pro_blocks` | Searches Starwind Pro blocks by query, category, or plan type                 |
 
 ## What is MCP?
 
@@ -81,10 +83,10 @@ The Model Context Protocol (MCP) is a protocol for extending AI capabilities thr
 
 - **Live Documentation** - Fetches up-to-date docs from starwind.dev/llms.txt
 - **Component Validation** - Validates components against the live component list
+- **Pro Blocks Search** - Search and discover Starwind Pro blocks by query, category, or plan
 - **Package Manager Detection** - Auto-detects npm, yarn, or pnpm
 - **Caching & Rate Limiting** - Efficient caching with sensible rate limits
 - **TypeScript** - Built with TypeScript for type safety
-- **Standard I/O Transport** - Uses stdio for AI assistant communication
 
 ## License
 
