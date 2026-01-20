@@ -28,14 +28,7 @@ const config: Config = {
   },
   tools: {
     baseDir: "./tools",
-    enabled: [
-      "get_package_manager",
-      "fetch_llm_data",
-      "get_documentation",
-      "init_project",
-      "install_component",
-      "update_component",
-    ],
+    enabled: ["starwind_docs", "starwind_add"],
   },
 };
 
