@@ -1,5 +1,11 @@
 # @starwind-ui/mcp
 
+## 0.3.1
+
+### Patch Changes
+
+- 9be88d1: Cleanup README by removing unused smithery references
+
 ## 0.3.0
 
 ### Minor Changes
