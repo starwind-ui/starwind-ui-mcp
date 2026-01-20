@@ -13,6 +13,8 @@ export interface StarwindAddArgs {
   components: string[];
   /** Whether to also include the init command (for new projects) */
   init?: boolean;
+  /** Whether this is a Starwind Pro project (adds --pro to init command) */
+  pro?: boolean;
   /** Working directory for package manager detection */
   cwd?: string;
   /** Override package manager detection (useful if auto-detection fails) */
@@ -200,7 +202,7 @@ function validateComponents(
 export const starwindAddTool = {
   name: "starwind_add",
   description:
-    "Generates the installation command for Starwind UI components. Validates component names and returns the correct CLI command based on the detected package manager. Use this after consulting starwind_docs to know which components to install.",
+    "Generates the installation command for Starwind UI components. Validates component names and returns the correct CLI command based on the detected package manager. Use this after consulting starwind_docs to know which components to install. For Starwind Pro blocks (prefixed with @starwind-pro/), set pro=true or the tool will auto-detect it.",
   inputSchema: {
     type: "object",
     properties: {
@@ -214,6 +216,11 @@ export const starwindAddTool = {
         type: "boolean",
         description:
           "Whether to include the init command for new projects. Set to true if Starwind UI has not been initialized in the project yet.",
+      },
+      pro: {
+        type: "boolean",
+        description:
+          "Set to true for Starwind Pro projects. This adds --pro to the init command. Required when using @starwind-pro/ blocks. Auto-detected if components contain @starwind-pro/ prefix.",
       },
       cwd: {
         type: "string",
@@ -231,6 +238,10 @@ export const starwindAddTool = {
   },
   handler: async (args: StarwindAddArgs) => {
     const { components, init = false, cwd, packageManager } = args;
+
+    // Auto-detect Pro mode if any component has @starwind-pro/ prefix
+    const hasProComponents = components.some((c) => c.toLowerCase().includes("@starwind-pro/"));
+    const isPro = args.pro === true || hasProComponents;
 
     if (!components || components.length === 0) {
       throw new Error("At least one component must be specified");
@@ -254,13 +265,23 @@ export const starwindAddTool = {
     let addCommand: string;
     let validation: ReturnType<typeof validateComponents> | null = null;
 
+    // Separate Pro blocks from standard components
+    const proBlocks = components.filter((c) => c.toLowerCase().includes("@starwind-pro/"));
+    const standardComponents = components.filter((c) => !c.toLowerCase().includes("@starwind-pro/"));
+
     if (installAll) {
       addCommand = `${dlxCommand} starwind@latest add --all --yes`;
+    } else if (proBlocks.length > 0 && standardComponents.length === 0) {
+      // Only Pro blocks - no validation needed, use as-is
+      addCommand = `${dlxCommand} starwind@latest add ${proBlocks.join(" ")} --yes`;
     } else {
-      // Validate components against fetched list
-      validation = validateComponents(components, availableComponents);
+      // Validate standard components against fetched list
+      validation = validateComponents(
+        standardComponents.length > 0 ? standardComponents : components,
+        availableComponents,
+      );
 
-      if (validation.valid.length === 0) {
+      if (validation.valid.length === 0 && proBlocks.length === 0) {
         return {
           success: false,
           error: "No valid components specified",
@@ -272,7 +293,9 @@ export const starwindAddTool = {
         };
       }
 
-      addCommand = `${dlxCommand} starwind@latest add ${validation.valid.join(" ")} --yes`;
+      // Combine valid standard components with Pro blocks
+      const allComponents = [...validation.valid, ...proBlocks];
+      addCommand = `${dlxCommand} starwind@latest add ${allComponents.join(" ")} --yes`;
     }
 
     // Build response
@@ -285,10 +308,19 @@ export const starwindAddTool = {
 
     // Add init command if requested
     if (init) {
-      const initCommand = `${dlxCommand} starwind@latest init --defaults`;
+      const initCommand = isPro
+        ? `${dlxCommand} starwind@latest init --defaults --pro`
+        : `${dlxCommand} starwind@latest init --defaults`;
       (response.commands as string[]).push(initCommand);
-      response.initNote =
-        "The init command uses --defaults to accept all default options. If you need custom configuration, run without --defaults and respond to the prompts manually.";
+      response.initNote = isPro
+        ? "The init command uses --defaults --pro to set up Starwind Pro. This is REQUIRED for @starwind-pro/ blocks to work."
+        : "The init command uses --defaults to accept all default options. For Starwind Pro blocks, use init with pro=true.";
+    }
+
+    // Add Pro mode info to response
+    response.proMode = isPro;
+    if (hasProComponents && !args.pro) {
+      response.proAutoDetected = true;
     }
 
     (response.commands as string[]).push(addCommand);
@@ -298,7 +330,8 @@ export const starwindAddTool = {
 
     // Add validation info if we validated components
     if (validation) {
-      response.componentsToInstall = validation.valid;
+      // Include both validated standard components and Pro blocks
+      response.componentsToInstall = [...validation.valid, ...proBlocks];
 
       if (validation.invalid.length > 0) {
         response.warnings = {
@@ -307,6 +340,8 @@ export const starwindAddTool = {
           message: `Some components were not recognized and will be skipped: ${validation.invalid.join(", ")}`,
         };
       }
+    } else if (proBlocks.length > 0) {
+      response.componentsToInstall = proBlocks;
     } else {
       response.componentsToInstall = ["all"];
     }
@@ -318,9 +353,15 @@ export const starwindAddTool = {
       note: "Commands include --yes to skip confirmation prompts (required for AI execution).",
       availableFlags: {
         add: ["--yes (skip prompts)", "--all (install all components)"],
-        init: ["--defaults (accept all defaults)"],
+        init: ["--defaults (accept all defaults)", "--pro (required for Starwind Pro blocks)"],
       },
     };
+
+    // Add important note about Pro initialization
+    if (isPro) {
+      response.proNote =
+        "IMPORTANT: Starwind Pro blocks require initialization with --pro flag. Make sure the project was initialized with 'starwind@latest init --defaults --pro' before adding Pro blocks.";
+    }
 
     return response;
   },

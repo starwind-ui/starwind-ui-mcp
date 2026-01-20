@@ -213,4 +213,55 @@ describe("starwindAddTool", () => {
       expect(result.command).toContain("npx");
     });
   });
+
+  describe("handler - Pro mode", () => {
+    it("should include --pro flag in init command when pro=true", async () => {
+      const result = await starwindAddTool.handler({
+        components: ["button"],
+        init: true,
+        pro: true,
+      });
+
+      expect(result.proMode).toBe(true);
+      expect(result.command).toContain("init --defaults --pro");
+      expect(result.initNote).toContain("--pro");
+    });
+
+    it("should auto-detect Pro mode from @starwind-pro/ components", async () => {
+      const result = await starwindAddTool.handler({
+        components: ["@starwind-pro/hero-01"],
+        init: true,
+      });
+
+      expect(result.proMode).toBe(true);
+      expect(result.proAutoDetected).toBe(true);
+      expect(result.command).toContain("init --defaults --pro");
+    });
+
+    it("should NOT include --pro flag when pro=false", async () => {
+      const result = await starwindAddTool.handler({
+        components: ["button"],
+        init: true,
+        pro: false,
+      });
+
+      expect(result.proMode).toBe(false);
+      expect(result.command).toContain("init --defaults");
+      expect(result.command).not.toContain("--pro");
+    });
+
+    it("should include proNote when in Pro mode", async () => {
+      const result = await starwindAddTool.handler({
+        components: ["button"],
+        pro: true,
+      });
+
+      expect(result.proNote).toBeDefined();
+      expect(result.proNote).toContain("Starwind Pro");
+    });
+
+    it("should have pro in inputSchema", () => {
+      expect(starwindAddTool.inputSchema.properties).toHaveProperty("pro");
+    });
+  });
 });
