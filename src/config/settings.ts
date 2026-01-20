@@ -1,41 +1,22 @@
 /**
  * Configuration settings for the MCP server
  */
-import dotenv from "dotenv";
+import { createRequire } from "module";
 
-dotenv.config();
-
-interface ServerConfig {
-  name: string;
-  version: string;
-}
-
-interface ToolsConfig {
-  baseDir: string;
-  enabled: string[];
-}
+const require = createRequire(import.meta.url);
+const pkg = require("../../package.json");
 
 export interface Config {
-  server: ServerConfig;
-  secret?: string;
-  tools: ToolsConfig;
+  server: {
+    name: string;
+    version: string;
+  };
 }
 
 const config: Config = {
   server: {
-    name: "Starwind MCP Server",
-    version: "0.0.1",
-  },
-  tools: {
-    baseDir: "./tools",
-    enabled: [
-      "get_package_manager",
-      "fetch_llm_data",
-      "get_documentation",
-      "init_project",
-      "install_component",
-      "update_component",
-    ],
+    name: pkg.name,
+    version: pkg.version,
   },
 };
 

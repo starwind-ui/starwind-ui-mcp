@@ -6,51 +6,27 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import { documentationTool } from "./documentation_tool.js";
-import { initProjectTool } from "./init_project_tool.js";
-import { installComponentTool } from "./install_component_tool.js";
-import { llmDataFetcherTool } from "./llm_data_fetcher_tool.js";
-import { packageManagerTool } from "./package_manager_tool.js";
-import { updateComponentTool } from "./update_component_tool.js";
+import { searchProBlocksTool } from "./search_pro_blocks_tool.js";
+import { starwindAddTool } from "./starwind_add_tool.js";
+import { starwindDocsTool } from "./starwind_docs_tool.js";
+import { starwindInitTool } from "./starwind_init_tool.js";
 
 /**
  * Collection of available tools
  */
 const tools = new Map();
 
-// tools.set("list_tools", {
-// 	description: "Lists all available tools",
-// 	inputSchema: {
-// 		type: "object",
-// 		properties: {},
-// 		required: [],
-// 	},
-// 	handler: async () => {
-// 		return Array.from(tools.entries()).map(([name, tool]) => ({
-// 			name,
-// 			description: (tool as any).description,
-// 			inputSchema: (tool as any).inputSchema,
-// 		}));
-// 	},
-// });
+// Register starwind_docs tool - fetches live documentation from starwind.dev
+tools.set(starwindDocsTool.name, starwindDocsTool);
 
-// Register init project tool
-tools.set(initProjectTool.name, initProjectTool);
+// Register starwind_add tool - generates validated install commands
+tools.set(starwindAddTool.name, starwindAddTool);
 
-// Register install component tool
-tools.set(installComponentTool.name, installComponentTool);
+// Register search_starwind_pro_blocks tool - searches Starwind Pro blocks
+tools.set(searchProBlocksTool.name, searchProBlocksTool);
 
-// Register update component tool
-tools.set(updateComponentTool.name, updateComponentTool);
-
-// Register documentation tool
-tools.set(documentationTool.name, documentationTool);
-
-// Register LLM data fetcher tool
-tools.set(llmDataFetcherTool.name, llmDataFetcherTool);
-
-// Register package manager tool
-tools.set(packageManagerTool.name, packageManagerTool);
+// Register starwind_init tool - dedicated project initialization
+tools.set(starwindInitTool.name, starwindInitTool);
 
 /**
  * Set up the tools for the MCP server
