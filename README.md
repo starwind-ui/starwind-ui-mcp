@@ -14,13 +14,13 @@ Instructions to set up your IDE to use a local MCP server vary by IDE. Here are 
 
 ```json title="mcp_config.json"
 {
-	"mcpServers": {
-		"starwind-ui": {
-			"command": "npx",
-			"args": ["-y", "@starwind-ui/mcp"],
-			"env": {}
-		}
-	}
+  "mcpServers": {
+    "starwind-ui": {
+      "command": "npx",
+      "args": ["-y", "@starwind-ui/mcp"],
+      "env": {}
+    }
+  }
 }
 ```
 
@@ -28,13 +28,13 @@ Instructions to set up your IDE to use a local MCP server vary by IDE. Here are 
 
 ```json title="mcp.json"
 {
-	"mcpServers": {
-		"starwind-ui": {
-			"command": "npx",
-			"args": ["-y", "@starwind-ui/mcp"],
-			"env": {}
-		}
-	}
+  "mcpServers": {
+    "starwind-ui": {
+      "command": "npx",
+      "args": ["-y", "@starwind-ui/mcp"],
+      "env": {}
+    }
+  }
 }
 ```
 
@@ -42,13 +42,13 @@ Instructions to set up your IDE to use a local MCP server vary by IDE. Here are 
 
 ```json title=".mcp.json"
 {
-	"mcpServers": {
-		"starwind-ui": {
-			"command": "npx",
-			"args": ["-y", "@starwind-ui/mcp"],
-			"env": {}
-		}
-	}
+  "mcpServers": {
+    "starwind-ui": {
+      "command": "npx",
+      "args": ["-y", "@starwind-ui/mcp"],
+      "env": {}
+    }
+  }
 }
 ```
 
@@ -66,18 +66,12 @@ To install Starwind UI MCP Server for Claude Desktop automatically via [Smithery
 npx -y @smithery/cli install @starwind-ui/starwind-ui-mcp --client claude
 ```
 
-
-
 ## Available Tools
 
-| Tool Name             | Description                                                       |
-| --------------------- | ----------------------------------------------------------------- |
-| `init_project`        | Initializes a new Starwind UI project                             |
-| `install_component`   | Generates installation commands for Starwind UI components        |
-| `update_component`    | Generates update commands for Starwind UI components              |
-| `get_documentation`   | Returns documentation links for Starwind UI components and guides |
-| `fetch_llm_data`      | Fetches LLM data from starwind.dev (rate limited, with caching)   |
-| `get_package_manager` | Detects and returns the current package manager information       |
+| Tool Name       | Description                                                                   |
+| --------------- | ----------------------------------------------------------------------------- |
+| `starwind_docs` | Fetches live documentation from starwind.dev with caching and topic filtering |
+| `starwind_add`  | Generates validated install commands with package manager detection           |
 
 ## What is MCP?
 
@@ -85,12 +79,12 @@ The Model Context Protocol (MCP) is a protocol for extending AI capabilities thr
 
 ## Features
 
-- **Tool-based Architecture** - Modular design for easy addition of new tools
-- **Starwind UI Documentation Tool** - Access documentation links for Starwind UI components
-- **Package Manager Detection** - Detect and use the appropriate package manager (npm, yarn, pnpm)
-- **LLM Data Fetcher** - Retrieve Starwind UI information for LLMs with caching and rate limiting
-- **TypeScript Implementation** - Built with TypeScript for better type safety and developer experience
-- **Standard I/O Transport** - Uses stdio for communication with AI assistants
+- **Live Documentation** - Fetches up-to-date docs from starwind.dev/llms.txt
+- **Component Validation** - Validates components against the live component list
+- **Package Manager Detection** - Auto-detects npm, yarn, or pnpm
+- **Caching & Rate Limiting** - Efficient caching with sensible rate limits
+- **TypeScript** - Built with TypeScript for type safety
+- **Standard I/O Transport** - Uses stdio for AI assistant communication
 
 ## Development
 
@@ -109,15 +103,53 @@ src/
   └── server.ts       # Main MCP server implementation
 ```
 
+## Local Development & Testing
+
+### Testing Locally in Windsurf
+
+1. Build the project:
+
+   ```bash
+   pnpm build
+   ```
+
+2. Update your Windsurf MCP config to point to your local build. Open your `mcp_config.json` (usually at `~/.codeium/windsurf/mcp_config.json`):
+
+   ```json
+   {
+     "mcpServers": {
+       "starwind-ui": {
+         "command": "node",
+         "args": ["C:/path/to/starwind-ui-mcp/dist/server.js"],
+         "env": {}
+       }
+     }
+   }
+   ```
+
+3. Restart Windsurf or reload MCP servers
+
+4. Test by asking Cascade to use the Starwind tools
+
+### Running Tests
+
+```bash
+pnpm test:run
+```
+
+### Using Changesets
+
+Create a changeset when making changes:
+
+```bash
+pnpm changeset
+```
+
 ## Adding New Tools
 
-To add your own tools to the server:
-
-1. Create a new tool file in the `src/tools/` directory
+1. Create a new tool file in `src/tools/`
 2. Register the tool in `src/tools/index.ts`
-3. Enable the tool in `src/config/settings.ts`
-4. Rebuild the server with `pnpm build`
-5. Restart the server with `pnpm start`
+3. Rebuild with `pnpm build`
 
 ## License
 
