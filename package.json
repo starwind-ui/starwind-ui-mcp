@@ -41,25 +41,30 @@
     "watch": "tsc --watch",
     "format": "pnpm format:write",
     "format:write": "eslint . --fix && prettier --write \"**/*.{ts,js,mjs,cjs}\" --cache",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "version": "changeset version",
+    "local:release": "pnpm build && changeset version && changeset publish"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.5.0",
-    "dotenv": "^16.4.1"
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "dotenv": "^17.2.3"
   },
   "devDependencies": {
-    "@eslint/js": "^9.30.1",
-    "@types/node": "^20.11.0",
-    "@vitest/coverage-v8": "^3.0.8",
-    "eslint": "^9.30.1",
-    "eslint-plugin-prettier": "^5.5.1",
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^25.0.9",
+    "@vitest/coverage-v8": "^4.0.17",
+    "eslint": "^9.39.2",
+    "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-simple-import-sort": "^12.1.1",
-    "globals": "^16.3.0",
-    "nodemon": "^3.0.3",
-    "prettier": "^3.5.3",
-    "tsx": "^4.20.3",
-    "typescript": "^5.8.2",
-    "typescript-eslint": "^8.35.1",
-    "vitest": "^3.0.8"
+    "globals": "^17.0.0",
+    "nodemon": "^3.1.11",
+    "prettier": "^3.8.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.53.1",
+    "vitest": "^4.0.17"
   }
 }
