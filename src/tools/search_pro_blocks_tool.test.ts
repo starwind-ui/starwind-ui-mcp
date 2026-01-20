@@ -204,4 +204,23 @@ describe("searchProBlocksTool", () => {
       }
     });
   });
+
+  describe("handler - Pro requirements", () => {
+    it("should include proRequirements in search results", async () => {
+      const result = await searchProBlocksTool.handler({ category: "hero" });
+
+      expect(result.proRequirements).toBeDefined();
+      const proReqs = result.proRequirements as { important: string; initCommand: string };
+      expect(proReqs.important).toContain("--pro");
+      expect(proReqs.initCommand).toContain("init --defaults --pro");
+    });
+
+    it("should include proRequirements when no filters provided", async () => {
+      const result = await searchProBlocksTool.handler({});
+
+      expect(result.proRequirements).toBeDefined();
+      const proReqs = result.proRequirements as { important: string };
+      expect(proReqs.important).toContain("--pro");
+    });
+  });
 });

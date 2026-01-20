@@ -9,6 +9,7 @@ import {
 import { searchProBlocksTool } from "./search_pro_blocks_tool.js";
 import { starwindAddTool } from "./starwind_add_tool.js";
 import { starwindDocsTool } from "./starwind_docs_tool.js";
+import { starwindInitTool } from "./starwind_init_tool.js";
 
 /**
  * Collection of available tools
@@ -23,6 +24,9 @@ tools.set(starwindAddTool.name, starwindAddTool);
 
 // Register search_starwind_pro_blocks tool - searches Starwind Pro blocks
 tools.set(searchProBlocksTool.name, searchProBlocksTool);
+
+// Register starwind_init tool - dedicated project initialization
+tools.set(starwindInitTool.name, starwindInitTool);
 
 /**
  * Set up the tools for the MCP server

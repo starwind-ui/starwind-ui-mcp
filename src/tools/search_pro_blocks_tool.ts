@@ -192,7 +192,7 @@ function formatDuration(ms: number): string {
 export const searchProBlocksTool = {
   name: "search_starwind_pro_blocks",
   description:
-    "Searches Starwind Pro blocks by query, category, or plan type. Returns matching blocks with install commands. Use this to find pre-built UI blocks like heroes, footers, pricing tables, etc.",
+    "Searches Starwind Pro blocks by query, category, or plan type. Returns matching blocks with install commands. Use this to find pre-built UI blocks like heroes, footers, pricing tables, etc. IMPORTANT: Pro blocks require the project to be initialized with 'starwind@latest init --defaults --pro' before they can be added.",
   inputSchema: {
     type: "object",
     properties: {
@@ -232,6 +232,12 @@ export const searchProBlocksTool = {
         totalBlocks: manifest.totalBlocks,
         source,
         hint: "Try searching with a query like 'hero dark' or filter by category like 'pricing'.",
+        proRequirements: {
+          important:
+            "Starwind Pro blocks REQUIRE the project to be initialized with --pro flag before blocks can be added.",
+          initCommand: "pnpm dlx starwind@latest init --defaults --pro",
+          note: "If the project was initialized without --pro, Pro blocks will fail to install.",
+        },
       };
     }
 
@@ -306,6 +312,16 @@ export const searchProBlocksTool = {
       response.message = `No blocks found matching your criteria. Try a different query or browse available categories.`;
       response.hint = `Available categories: ${manifest.categories.slice(0, 10).join(", ")}${manifest.categories.length > 10 ? "..." : ""}`;
     }
+
+    // ALWAYS include Pro initialization requirements
+    response.proRequirements = {
+      important:
+        "Starwind Pro blocks REQUIRE the project to be initialized with --pro flag before blocks can be added.",
+      initCommand: "pnpm dlx starwind@latest init --defaults --pro",
+      note: "If the project was initialized without --pro, Pro blocks will fail to install. Re-run init with --pro to fix.",
+      starwindAddTip:
+        "When using starwind_add tool with Pro blocks, set init=true and pro=true to generate the correct init command.",
+    };
 
     return response;
   },
