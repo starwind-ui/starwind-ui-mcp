@@ -1,8 +1,8 @@
 # Starwind UI MCP Server
 
-[![smithery badge](https://smithery.ai/badge/@starwind-ui/starwind-ui-mcp)](https://smithery.ai/server/@starwind-ui/starwind-ui-mcp) [![Verified on MseeP](https://mseep.ai/badge.svg)](https://mseep.ai/app/9878a189-46ec-462c-903f-a72276f707e3)
+[![Verified on MseeP](https://mseep.ai/badge.svg)](https://mseep.ai/app/9878a189-46ec-462c-903f-a72276f707e3)
 
-A TypeScript implementation of a Model Context Protocol (MCP) server for [Starwind UI](https://starwind.dev/), providing tools to help developers work with Starwind UI components when leveraging AI tools like Claude, Windsurf, Cursor, and more.
+A TypeScript implementation of a Model Context Protocol (MCP) server for [Starwind UI](https://starwind.dev/) and [Starwind Pro](https://pro.starwind.dev/), providing tools to help developers work with Starwind UI and Pro components when leveraging AI tools like Claude, Windsurf, Cursor, and more.
 
 ## Quick Start
 
@@ -57,14 +57,6 @@ Detailed instructions:
 - [Windsurf MCP Setup](https://docs.windsurf.com/windsurf/cascade/mcp)
 - [Cursor MCP Setup](https://docs.cursor.com/context/model-context-protocol)
 - [Claude Code MCP Setup](https://docs.anthropic.com/en/docs/claude-code/mcp)
-
-### Installing via Smithery
-
-To install Starwind UI MCP Server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@starwind-ui/starwind-ui-mcp):
-
-```bash
-npx -y @smithery/cli install @starwind-ui/starwind-ui-mcp --client claude
-```
 
 ## Available Tools
 
