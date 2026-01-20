@@ -1,5 +1,0 @@
----
-"@starwind-ui/mcp": minor
----
-
-feat: completely revamp mcp server with only four tools - `starwind_init`, `starwind_add`, `starwind_docs`, and `search_starwind_pro_blocks` - resulting in a far more capable and understandable experience
