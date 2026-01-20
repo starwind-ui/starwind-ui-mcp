@@ -22,6 +22,7 @@ describe("starwindAddTool", () => {
       expect(starwindAddTool.inputSchema.properties).toHaveProperty("components");
       expect(starwindAddTool.inputSchema.properties).toHaveProperty("init");
       expect(starwindAddTool.inputSchema.properties).toHaveProperty("cwd");
+      expect(starwindAddTool.inputSchema.properties).toHaveProperty("packageManager");
       expect(starwindAddTool.inputSchema.required).toContain("components");
     });
   });
@@ -49,11 +50,12 @@ describe("starwindAddTool", () => {
   });
 
   describe("handler - command generation", () => {
-    it("should generate install command with component names", async () => {
+    it("should generate install command with component names and --yes flag", async () => {
       const result = await starwindAddTool.handler({ components: ["button"] });
 
       expect(result.success).toBe(true);
       expect(result.command).toContain("starwind@latest add button");
+      expect(result.command).toContain("--yes");
     });
 
     it("should handle multiple components", async () => {
@@ -66,11 +68,12 @@ describe("starwindAddTool", () => {
       expect(result.command).toContain("button card dialog");
     });
 
-    it("should handle --all flag", async () => {
+    it("should handle --all flag with --yes", async () => {
       const result = await starwindAddTool.handler({ components: ["--all"] });
 
       expect(result.success).toBe(true);
       expect(result.command).toContain("--all");
+      expect(result.command).toContain("--yes");
       expect(result.componentsToInstall).toEqual(["all"]);
     });
 
@@ -165,6 +168,49 @@ describe("starwindAddTool", () => {
 
       expect(Array.isArray(result.availableComponents)).toBe(true);
       expect((result.availableComponents as string[]).length).toBeGreaterThan(0);
+    });
+
+    it("should include cliFlags info in response", async () => {
+      const result = await starwindAddTool.handler({ components: ["button"] });
+
+      expect(result.cliFlags).toBeDefined();
+      const cliFlags = result.cliFlags as { note: string; availableFlags: Record<string, string[]> };
+      expect(cliFlags.note).toContain("--yes");
+      expect(cliFlags.availableFlags.add).toBeDefined();
+      expect(cliFlags.availableFlags.init).toBeDefined();
+    });
+  });
+
+  describe("handler - packageManager override", () => {
+    it("should use specified packageManager instead of auto-detection", async () => {
+      const result = await starwindAddTool.handler({
+        components: ["button"],
+        packageManager: "yarn",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.packageManager).toBe("yarn");
+      expect(result.command).toContain("yarn dlx");
+    });
+
+    it("should use pnpm dlx when pnpm is specified", async () => {
+      const result = await starwindAddTool.handler({
+        components: ["button"],
+        packageManager: "pnpm",
+      });
+
+      expect(result.packageManager).toBe("pnpm");
+      expect(result.command).toContain("pnpm dlx");
+    });
+
+    it("should use npx when npm is specified", async () => {
+      const result = await starwindAddTool.handler({
+        components: ["button"],
+        packageManager: "npm",
+      });
+
+      expect(result.packageManager).toBe("npm");
+      expect(result.command).toContain("npx");
     });
   });
 });

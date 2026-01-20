@@ -15,6 +15,8 @@ export interface StarwindAddArgs {
   init?: boolean;
   /** Working directory for package manager detection */
   cwd?: string;
+  /** Override package manager detection (useful if auto-detection fails) */
+  packageManager?: "npm" | "pnpm" | "yarn";
 }
 
 /**
@@ -218,11 +220,17 @@ export const starwindAddTool = {
         description:
           "Working directory for package manager detection. Defaults to current directory.",
       },
+      packageManager: {
+        type: "string",
+        enum: ["npm", "pnpm", "yarn"],
+        description:
+          "Override the auto-detected package manager. Use this if package manager detection fails or you want to force a specific one.",
+      },
     },
     required: ["components"],
   },
   handler: async (args: StarwindAddArgs) => {
-    const { components, init = false, cwd } = args;
+    const { components, init = false, cwd, packageManager } = args;
 
     if (!components || components.length === 0) {
       throw new Error("At least one component must be specified");
@@ -232,8 +240,10 @@ export const starwindAddTool = {
     const { components: availableComponents, source: componentSource } =
       await getAvailableComponents();
 
-    // Detect package manager
-    const pmInfo = detectPackageManager({ cwd });
+    // Detect package manager (or use override)
+    const pmInfo = packageManager
+      ? { name: packageManager as PackageManager }
+      : detectPackageManager({ cwd });
     const dlxCommand = getDlxCommand(pmInfo.name);
 
     // Check for --all flag
@@ -245,7 +255,7 @@ export const starwindAddTool = {
     let validation: ReturnType<typeof validateComponents> | null = null;
 
     if (installAll) {
-      addCommand = `${dlxCommand} starwind@latest add --all`;
+      addCommand = `${dlxCommand} starwind@latest add --all --yes`;
     } else {
       // Validate components against fetched list
       validation = validateComponents(components, availableComponents);
@@ -262,7 +272,7 @@ export const starwindAddTool = {
         };
       }
 
-      addCommand = `${dlxCommand} starwind@latest add ${validation.valid.join(" ")}`;
+      addCommand = `${dlxCommand} starwind@latest add ${validation.valid.join(" ")} --yes`;
     }
 
     // Build response
@@ -277,6 +287,8 @@ export const starwindAddTool = {
     if (init) {
       const initCommand = `${dlxCommand} starwind@latest init --defaults`;
       (response.commands as string[]).push(initCommand);
+      response.initNote =
+        "The init command uses --defaults to accept all default options. If you need custom configuration, run without --defaults and respond to the prompts manually.";
     }
 
     (response.commands as string[]).push(addCommand);
@@ -302,6 +314,13 @@ export const starwindAddTool = {
     response.availableComponents = availableComponents;
     response.instructions =
       "Run the command in your project directory. Make sure you have an Astro project with Tailwind CSS v4 configured.";
+    response.cliFlags = {
+      note: "Commands include --yes to skip confirmation prompts (required for AI execution).",
+      availableFlags: {
+        add: ["--yes (skip prompts)", "--all (install all components)"],
+        init: ["--defaults (accept all defaults)"],
+      },
+    };
 
     return response;
   },
