@@ -6,6 +6,7 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 
+import { searchProBlocksTool } from "./search_pro_blocks_tool.js";
 import { starwindAddTool } from "./starwind_add_tool.js";
 import { starwindDocsTool } from "./starwind_docs_tool.js";
 
@@ -19,6 +20,9 @@ tools.set(starwindDocsTool.name, starwindDocsTool);
 
 // Register starwind_add tool - generates validated install commands
 tools.set(starwindAddTool.name, starwindAddTool);
+
+// Register search_starwind_pro_blocks tool - searches Starwind Pro blocks
+tools.set(searchProBlocksTool.name, searchProBlocksTool);
 
 /**
  * Set up the tools for the MCP server
