@@ -96,6 +96,50 @@ describe("starwindDocsTool", () => {
     });
   });
 
+  describe("handler - specific page fetching", () => {
+    it("should fetch specific component markdown page for known components", async () => {
+      const result = await starwindDocsTool.handler({ topic: "sidebar" });
+
+      expect(result.topic).toBe("sidebar");
+      expect(result.url).toContain("/docs/components/sidebar/markdown.md");
+      expect(result.pageType).toBe("component");
+      expect(result.documentation).toBeTruthy();
+    });
+
+    it("should fetch specific guide page for known guides", async () => {
+      const result = await starwindDocsTool.handler({ topic: "installation" });
+
+      expect(result.topic).toBe("installation");
+      expect(result.url).toContain("/docs/getting-started/installation/markdown.md");
+      expect(result.pageType).toBe("guide");
+    });
+
+    it("should handle theming topic", async () => {
+      const result = await starwindDocsTool.handler({ topic: "theming" });
+
+      expect(result.topic).toBe("theming");
+      // May fetch specific page or fall back to llms.txt
+      expect(result.documentation).toBeTruthy();
+    });
+
+    it("should cache specific page results", async () => {
+      // First call
+      await starwindDocsTool.handler({ topic: "button" });
+
+      // Second call - should be from cache
+      const result = await starwindDocsTool.handler({ topic: "button" });
+      expect(result.source).toBe("cache");
+    });
+
+    it("should fall back to llms.txt for unknown topics", async () => {
+      const result = await starwindDocsTool.handler({ topic: "zzzznonexistent" });
+
+      // Should fall back to llms.txt filtering
+      expect(result.source).toBe("fallback");
+      expect(result.url).toContain("llms.txt");
+    });
+  });
+
   describe("handler - response structure", () => {
     it("should include rate limit info in response", async () => {
       const result = await starwindDocsTool.handler({});
