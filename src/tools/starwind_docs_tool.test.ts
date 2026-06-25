@@ -101,7 +101,7 @@ describe("starwindDocsTool", () => {
       const result = await starwindDocsTool.handler({ topic: "sidebar" });
 
       expect(result.topic).toBe("sidebar");
-      expect(result.url).toContain("/docs/components/sidebar/markdown.md");
+      expect(result.url).toContain("/docs/components/sidebar.md");
       expect(result.pageType).toBe("component");
       expect(result.documentation).toBeTruthy();
     });
@@ -110,7 +110,7 @@ describe("starwindDocsTool", () => {
       const result = await starwindDocsTool.handler({ topic: "installation" });
 
       expect(result.topic).toBe("installation");
-      expect(result.url).toContain("/docs/getting-started/installation/markdown.md");
+      expect(result.url).toContain("/docs/getting-started/installation.md");
       expect(result.pageType).toBe("guide");
     });
 

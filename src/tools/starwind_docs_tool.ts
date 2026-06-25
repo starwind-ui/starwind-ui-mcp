@@ -172,18 +172,18 @@ const KNOWN_COMPONENTS = [
 
 // Known doc pages that aren't components
 const DOC_PAGE_PATHS: Record<string, string> = {
-  installation: "/docs/getting-started/installation/",
-  "getting-started": "/docs/getting-started/installation/",
-  theming: "/docs/getting-started/theming/",
-  themes: "/docs/getting-started/themes/",
-  "dark-mode": "/docs/getting-started/dark-mode/",
-  darkmode: "/docs/getting-started/dark-mode/",
-  typography: "/docs/getting-started/typography/",
-  cli: "/docs/getting-started/cli/",
-  about: "/docs/getting-started/",
-  introduction: "/docs/getting-started/",
-  ai: "/docs/getting-started/ai/",
-  "ai-integration": "/docs/getting-started/ai/",
+  installation: "/docs/getting-started/installation",
+  "getting-started": "/docs/getting-started/installation",
+  theming: "/docs/getting-started/theming",
+  themes: "/docs/getting-started/themes",
+  "dark-mode": "/docs/getting-started/dark-mode",
+  darkmode: "/docs/getting-started/dark-mode",
+  typography: "/docs/getting-started/typography",
+  cli: "/docs/getting-started/cli",
+  about: "/docs/getting-started",
+  introduction: "/docs/getting-started",
+  ai: "/docs/getting-started/ai",
+  "ai-integration": "/docs/getting-started/ai",
 };
 
 /**
@@ -194,16 +194,16 @@ function getMarkdownUrl(topic: string): string | null {
 
   // Check if it's a known doc page
   if (DOC_PAGE_PATHS[normalized]) {
-    return `${DOCS_URLS.base}${DOC_PAGE_PATHS[normalized]}markdown.md`;
+    return `${DOCS_URLS.base}${DOC_PAGE_PATHS[normalized]}.md`;
   }
 
   // Check if it's a known component
   if (KNOWN_COMPONENTS.includes(normalized)) {
-    return `${DOCS_URLS.base}/docs/components/${normalized}/markdown.md`;
+    return `${DOCS_URLS.base}/docs/components/${normalized}.md`;
   }
 
   // Try as a component anyway (might be a new component not in our list)
-  return `${DOCS_URLS.base}/docs/components/${normalized}/markdown.md`;
+  return `${DOCS_URLS.base}/docs/components/${normalized}.md`;
 }
 
 /**
