@@ -1,5 +1,16 @@
 # @starwind-ui/mcp
 
+## 0.4.0
+
+### Minor Changes
+
+- ee82cca: Add the unified `starwind_search` tool for standard components and Starwind Pro blocks, refresh component metadata fallback behavior, and clarify Pro setup guidance for new versus existing Starwind UI projects.
+
+### Patch Changes
+
+- 4f2d048: feat: update documentation links to the new standard `.md` implementation
+- 94ed2bc: refactor: update MCP implementation to the new `McpServer` API
+
 ## 0.3.1
 
 ### Patch Changes
