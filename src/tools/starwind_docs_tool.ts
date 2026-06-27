@@ -3,6 +3,8 @@
  * Fetches live documentation from starwind.dev for AI consumption
  */
 
+import { z } from "zod";
+
 /**
  * Interface for starwind docs tool arguments
  */
@@ -11,6 +13,30 @@ export interface StarwindDocsArgs {
   topic?: string;
   /** Whether to fetch the full documentation (defaults to false for concise version) */
   full?: boolean;
+}
+
+/**
+ * Result returned by the Starwind docs tool handler.
+ */
+export interface StarwindDocsResult {
+  /** The documentation content (markdown). */
+  documentation: string;
+  /** Kind of result: an exact dedicated page, filtered excerpts, or the full aggregate docs. */
+  resultType: "page" | "filtered" | "full";
+  /** The source URL the documentation was derived from. */
+  url: string;
+  /** The requested topic, or null when none was provided. */
+  topic: string | null;
+  /** Whether full documentation was returned. */
+  full: boolean;
+  /** For dedicated pages, whether the topic is a component or a guide. */
+  pageType?: "component" | "guide";
+  /** Present only on degraded ("filtered") results to caveat completeness. */
+  note?: string;
+  /** Cache metadata, or null when not served from cache. */
+  cacheInfo: { age: string; remainingTtl: string } | null;
+  /** Rate limit telemetry. */
+  rateLimitInfo: { requestsRemaining: number; resetAfter: string };
 }
 
 /**
@@ -184,6 +210,8 @@ const DOC_PAGE_PATHS: Record<string, string> = {
   introduction: "/docs/getting-started",
   ai: "/docs/getting-started/ai",
   "ai-integration": "/docs/getting-started/ai",
+  skills: "/docs/getting-started/skills",
+  mcp: "/docs/getting-started/mcp",
 };
 
 /**
@@ -229,22 +257,20 @@ export const starwindDocsTool = {
   description:
     "Fetches live Starwind UI documentation from starwind.dev. Use this to get up-to-date component docs, installation guides, theming info, and usage examples. The documentation is optimized for AI consumption.",
   inputSchema: {
-    type: "object",
-    properties: {
-      topic: {
-        type: "string",
-        description:
-          "Optional topic to filter documentation (e.g., 'button', 'accordion', 'theming', 'installation'). Leave empty to get all documentation.",
-      },
-      full: {
-        type: "boolean",
-        description:
-          "Whether to fetch the full documentation with complete code examples. Defaults to false for a more concise version.",
-      },
-    },
-    required: [],
+    topic: z
+      .string()
+      .optional()
+      .describe(
+        "Optional topic to filter documentation (e.g., 'button', 'accordion', 'theming', 'installation'). Leave empty to get all documentation.",
+      ),
+    full: z
+      .boolean()
+      .optional()
+      .describe(
+        "Whether to fetch the full documentation with complete code examples. Defaults to false for a more concise version.",
+      ),
   },
-  handler: async (args: StarwindDocsArgs = {}) => {
+  handler: async (args: StarwindDocsArgs = {}): Promise<StarwindDocsResult> => {
     const isFull = args.full === true;
 
     // If a topic is provided, try to fetch the specific markdown page first
@@ -257,7 +283,6 @@ export const starwindDocsTool = {
 
         // Check cache for this specific page
         let pageContent = docsCache.get(pageCacheKey);
-        let source: "cache" | "network" | "fallback" = "cache";
 
         if (!pageContent) {
           // Check rate limit
@@ -273,13 +298,12 @@ export const starwindDocsTool = {
           if (fetchedContent) {
             pageContent = fetchedContent;
             docsCache.set(pageCacheKey, pageContent, CACHE_TTL.PAGE);
-            source = "network";
 
             const cacheInfo = docsCache.getInfo(pageCacheKey);
 
             return {
               documentation: pageContent,
-              source,
+              resultType: "page",
               url: markdownUrl,
               topic: args.topic,
               full: true, // Specific pages are always full
@@ -297,14 +321,13 @@ export const starwindDocsTool = {
             };
           }
           // Page fetch failed, fall through to llms.txt fallback
-          source = "fallback";
         } else {
           // Found in cache
           const cacheInfo = docsCache.getInfo(pageCacheKey);
 
           return {
             documentation: pageContent,
-            source,
+            resultType: "page",
             url: markdownUrl,
             topic: args.topic,
             full: true,
@@ -331,7 +354,6 @@ export const starwindDocsTool = {
 
     // Check cache first
     let docsContent = docsCache.get(cacheKey);
-    let source: "cache" | "network" | "fallback" = "cache";
 
     if (!docsContent) {
       // Not in cache, check rate limit
@@ -351,9 +373,10 @@ export const starwindDocsTool = {
         }
         docsContent = await response.text();
         docsCache.set(cacheKey, docsContent, cacheTtl);
-        source = "network";
       } catch (error: any) {
-        throw new Error(`Error fetching Starwind documentation: ${error.message}`);
+        throw new Error(`Error fetching Starwind documentation: ${error.message}`, {
+          cause: error,
+        });
       }
     }
 
@@ -400,16 +423,22 @@ export const starwindDocsTool = {
           filteredContent = `No documentation found for topic: "${args.topic}". Try searching for: button, accordion, dialog, card, theming, installation, or use without a topic filter to see all available documentation.`;
         }
       }
-
-      // Mark as fallback if we tried a specific page but it failed
-      source = "fallback";
     }
 
     const cacheInfo = docsCache.getInfo(cacheKey);
 
+    // A topic was requested but no dedicated page was returned, so this content
+    // is filtered from the general docs and may be incomplete (degraded result).
+    const isFiltered = Boolean(args.topic);
+
     return {
       documentation: filteredContent,
-      source,
+      resultType: isFiltered ? "filtered" : "full",
+      ...(isFiltered
+        ? {
+            note: `Could not return a dedicated documentation page for "${args.topic}". The content below is filtered from the general docs and may be incomplete. For best results, request a known topic such as: button, accordion, dialog, theming, or installation.`,
+          }
+        : {}),
       url,
       topic: args.topic || null,
       full: isFull,

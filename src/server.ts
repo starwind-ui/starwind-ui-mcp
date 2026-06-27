@@ -1,36 +1,20 @@
 #!/usr/bin/env node
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import config from "./config/settings.js";
-import { setupTools, tools } from "./tools/index.js";
+import { setupTools } from "./tools/index.js";
 
 /**
- * Initialize the MCP server with basic capabilities
+ * Initialize the high-level MCP server. Tool capabilities are registered
+ * automatically by `registerTool`, so no manual capabilities map is needed.
  */
-// Import tools for capabilities registration
-// Dynamically build capabilities object from tools map
-const toolCapabilities: Record<string, any> = {};
-Array.from(tools.entries()).forEach(([name, tool]) => {
-  toolCapabilities[name] = {
-    inputSchema: (tool as any).inputSchema,
-  };
+const server = new McpServer({
+  name: config.server.name,
+  version: config.server.version,
 });
 
-const server = new Server(
-  {
-    name: config.server.name,
-    version: config.server.version,
-  },
-  {
-    capabilities: {
-      resources: {},
-      tools: toolCapabilities,
-    },
-  },
-);
-
-// Setup tool handlers
+// Register all tools on the server
 setupTools(server);
 
 // Create and connect the transport

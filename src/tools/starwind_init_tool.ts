@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { detectPackageManager, type PackageManager } from "../utils/package_manager.js";
 
 /**
@@ -35,26 +37,22 @@ export const starwindInitTool = {
   description:
     "Initializes a Starwind UI project. ALWAYS use this tool FIRST before adding any Starwind components or blocks. Defaults to Pro setup (recommended) which enables both standard components AND Pro blocks. Set pro=false only if you specifically want standard-only setup.",
   inputSchema: {
-    type: "object",
-    properties: {
-      cwd: {
-        type: "string",
-        description: "Working directory for package manager detection. Defaults to current directory.",
-      },
-      packageManager: {
-        type: "string",
-        enum: ["npm", "pnpm", "yarn"],
-        description:
-          "Override the auto-detected package manager. Use this if package manager detection fails or you want to force a specific one.",
-      },
-      pro: {
-        type: "boolean",
-        description:
-          "Whether to initialize with Starwind Pro support. Defaults to TRUE. Pro setup enables both standard components AND Pro blocks. Only set to false if you specifically want standard-only setup.",
-        default: true,
-      },
-    },
-    required: [],
+    cwd: z
+      .string()
+      .optional()
+      .describe("Working directory for package manager detection. Defaults to current directory."),
+    packageManager: z
+      .enum(["npm", "pnpm", "yarn"])
+      .optional()
+      .describe(
+        "Override the auto-detected package manager. Use this if package manager detection fails or you want to force a specific one.",
+      ),
+    pro: z
+      .boolean()
+      .optional()
+      .describe(
+        "Whether to initialize with Starwind Pro support. Defaults to TRUE. Pro setup enables both standard components AND Pro blocks. Only set to false if you specifically want standard-only setup.",
+      ),
   },
 
   /**

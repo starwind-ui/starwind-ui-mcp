@@ -18,12 +18,10 @@ describe("starwindAddTool", () => {
     });
 
     it("should have correct input schema", () => {
-      expect(starwindAddTool.inputSchema.type).toBe("object");
-      expect(starwindAddTool.inputSchema.properties).toHaveProperty("components");
-      expect(starwindAddTool.inputSchema.properties).toHaveProperty("init");
-      expect(starwindAddTool.inputSchema.properties).toHaveProperty("cwd");
-      expect(starwindAddTool.inputSchema.properties).toHaveProperty("packageManager");
-      expect(starwindAddTool.inputSchema.required).toContain("components");
+      expect(starwindAddTool.inputSchema).toHaveProperty("components");
+      expect(starwindAddTool.inputSchema).toHaveProperty("init");
+      expect(starwindAddTool.inputSchema).toHaveProperty("cwd");
+      expect(starwindAddTool.inputSchema).toHaveProperty("packageManager");
     });
   });
 
@@ -174,7 +172,10 @@ describe("starwindAddTool", () => {
       const result = await starwindAddTool.handler({ components: ["button"] });
 
       expect(result.cliFlags).toBeDefined();
-      const cliFlags = result.cliFlags as { note: string; availableFlags: Record<string, string[]> };
+      const cliFlags = result.cliFlags as {
+        note: string;
+        availableFlags: Record<string, string[]>;
+      };
       expect(cliFlags.note).toContain("--yes");
       expect(cliFlags.availableFlags.add).toBeDefined();
       expect(cliFlags.availableFlags.init).toBeDefined();
@@ -261,7 +262,7 @@ describe("starwindAddTool", () => {
     });
 
     it("should have pro in inputSchema", () => {
-      expect(starwindAddTool.inputSchema.properties).toHaveProperty("pro");
+      expect(starwindAddTool.inputSchema).toHaveProperty("pro");
     });
   });
 });

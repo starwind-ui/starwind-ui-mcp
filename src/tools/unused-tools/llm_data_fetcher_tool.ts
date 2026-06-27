@@ -224,8 +224,9 @@ export const llmDataFetcherTool = {
           resetAfter: rateLimiter.getResetTimeSeconds() + " seconds",
         },
       };
-    } catch (error: any) {
-      throw new Error(`Error fetching LLM data: ${error.message}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      throw new Error(`Error fetching LLM data: ${message}`, { cause: error });
     }
   },
 };

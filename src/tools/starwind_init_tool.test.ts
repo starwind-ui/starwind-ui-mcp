@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect,it } from "vitest";
+
 import { starwindInitTool } from "./starwind_init_tool.js";
 
 describe("starwindInitTool", () => {
@@ -14,14 +15,14 @@ describe("starwindInitTool", () => {
 
     it("should have correct input schema", () => {
       expect(starwindInitTool.inputSchema).toBeDefined();
-      expect(starwindInitTool.inputSchema.properties).toHaveProperty("cwd");
-      expect(starwindInitTool.inputSchema.properties).toHaveProperty("packageManager");
-      expect(starwindInitTool.inputSchema.properties).toHaveProperty("pro");
+      expect(starwindInitTool.inputSchema).toHaveProperty("cwd");
+      expect(starwindInitTool.inputSchema).toHaveProperty("packageManager");
+      expect(starwindInitTool.inputSchema).toHaveProperty("pro");
     });
 
-    it("should have pro default to true in schema", () => {
-      const proSchema = starwindInitTool.inputSchema.properties.pro as { default: boolean };
-      expect(proSchema.default).toBe(true);
+    it("should default to Pro setup when pro is omitted", async () => {
+      const result = await starwindInitTool.handler({});
+      expect(result.proEnabled).toBe(true);
     });
   });
 

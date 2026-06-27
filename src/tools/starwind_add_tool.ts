@@ -3,6 +3,8 @@
  * Generates validated install commands for Starwind UI components
  */
 
+import { z } from "zod";
+
 import { detectPackageManager, type PackageManager } from "../utils/package_manager.js";
 
 /**
@@ -204,37 +206,33 @@ export const starwindAddTool = {
   description:
     "Generates the installation command for Starwind UI components. Validates component names and returns the correct CLI command based on the detected package manager. Use this after consulting starwind_docs to know which components to install. For Starwind Pro blocks (prefixed with @starwind-pro/), set pro=true or the tool will auto-detect it.",
   inputSchema: {
-    type: "object",
-    properties: {
-      components: {
-        type: "array",
-        items: { type: "string" },
-        description:
-          "Array of component names to install (e.g., ['button', 'card', 'dialog']). Use '--all' as a single item to install all components.",
-      },
-      init: {
-        type: "boolean",
-        description:
-          "Whether to include the init command for new projects. Set to true if Starwind UI has not been initialized in the project yet.",
-      },
-      pro: {
-        type: "boolean",
-        description:
-          "Set to true for Starwind Pro projects. This adds --pro to the init command. Required when using @starwind-pro/ blocks. Auto-detected if components contain @starwind-pro/ prefix.",
-      },
-      cwd: {
-        type: "string",
-        description:
-          "Working directory for package manager detection. Defaults to current directory.",
-      },
-      packageManager: {
-        type: "string",
-        enum: ["npm", "pnpm", "yarn"],
-        description:
-          "Override the auto-detected package manager. Use this if package manager detection fails or you want to force a specific one.",
-      },
-    },
-    required: ["components"],
+    components: z
+      .array(z.string())
+      .describe(
+        "Array of component names to install (e.g., ['button', 'card', 'dialog']). Use '--all' as a single item to install all components.",
+      ),
+    init: z
+      .boolean()
+      .optional()
+      .describe(
+        "Whether to include the init command for new projects. Set to true if Starwind UI has not been initialized in the project yet.",
+      ),
+    pro: z
+      .boolean()
+      .optional()
+      .describe(
+        "Set to true for Starwind Pro projects. This adds --pro to the init command. Required when using @starwind-pro/ blocks. Auto-detected if components contain @starwind-pro/ prefix.",
+      ),
+    cwd: z
+      .string()
+      .optional()
+      .describe("Working directory for package manager detection. Defaults to current directory."),
+    packageManager: z
+      .enum(["npm", "pnpm", "yarn"])
+      .optional()
+      .describe(
+        "Override the auto-detected package manager. Use this if package manager detection fails or you want to force a specific one.",
+      ),
   },
   handler: async (args: StarwindAddArgs) => {
     const { components, init = false, cwd, packageManager } = args;
@@ -267,7 +265,9 @@ export const starwindAddTool = {
 
     // Separate Pro blocks from standard components
     const proBlocks = components.filter((c) => c.toLowerCase().includes("@starwind-pro/"));
-    const standardComponents = components.filter((c) => !c.toLowerCase().includes("@starwind-pro/"));
+    const standardComponents = components.filter(
+      (c) => !c.toLowerCase().includes("@starwind-pro/"),
+    );
 
     if (installAll) {
       addCommand = `${dlxCommand} starwind@latest add --all --yes`;

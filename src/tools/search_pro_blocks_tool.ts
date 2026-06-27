@@ -3,6 +3,8 @@
  * Searches and filters Starwind Pro blocks from the manifest
  */
 
+import { z } from "zod";
+
 /**
  * Manifest block structure from pro.starwind.dev
  */
@@ -141,7 +143,7 @@ async function getManifest(): Promise<{ manifest: Manifest; source: "cache" | "n
     return { manifest, source: "network" };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    throw new Error(`Error fetching Starwind Pro manifest: ${message}`);
+    throw new Error(`Error fetching Starwind Pro manifest: ${message}`, { cause: error });
   }
 }
 
@@ -194,28 +196,28 @@ export const searchProBlocksTool = {
   description:
     "Searches Starwind Pro blocks by query, category, or plan type. Returns matching blocks with install commands. Use this to find pre-built UI blocks like heroes, footers, pricing tables, etc. IMPORTANT: Pro blocks require the project to be initialized with 'starwind@latest init --defaults --pro' before they can be added.",
   inputSchema: {
-    type: "object",
-    properties: {
-      query: {
-        type: "string",
-        description:
-          "Search query to match against block name, description, and keywords (e.g., 'pricing', 'hero dark', 'footer minimal').",
-      },
-      category: {
-        type: "string",
-        description:
-          "Filter by category. Available categories include: hero, footer, pricing, navigation, testimonial, faq, feature, cta, blog, team, contact, form, authentication, etc.",
-      },
-      plan: {
-        type: "string",
-        enum: ["free", "pro"],
-        description: "Filter by plan type. 'free' blocks are available to all, 'pro' requires a subscription.",
-      },
-      limit: {
-        type: "number",
-        description: "Maximum number of results to return. Default: 10, Max: 50.",
-      },
-    },
+    query: z
+      .string()
+      .optional()
+      .describe(
+        "Search query to match against block name, description, and keywords (e.g., 'pricing', 'hero dark', 'footer minimal').",
+      ),
+    category: z
+      .string()
+      .optional()
+      .describe(
+        "Filter by category. Available categories include: hero, footer, pricing, navigation, testimonial, faq, feature, cta, blog, team, contact, form, authentication, etc.",
+      ),
+    plan: z
+      .enum(["free", "pro"])
+      .optional()
+      .describe(
+        "Filter by plan type. 'free' blocks are available to all, 'pro' requires a subscription.",
+      ),
+    limit: z
+      .number()
+      .optional()
+      .describe("Maximum number of results to return. Default: 10, Max: 50."),
   },
   handler: async (args: SearchProBlocksArgs) => {
     const { query, category, plan, limit = 10 } = args;

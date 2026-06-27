@@ -18,10 +18,8 @@ describe("starwindDocsTool", () => {
     });
 
     it("should have correct input schema", () => {
-      expect(starwindDocsTool.inputSchema.type).toBe("object");
-      expect(starwindDocsTool.inputSchema.properties).toHaveProperty("topic");
-      expect(starwindDocsTool.inputSchema.properties).toHaveProperty("full");
-      expect(starwindDocsTool.inputSchema.required).toEqual([]);
+      expect(starwindDocsTool.inputSchema).toHaveProperty("topic");
+      expect(starwindDocsTool.inputSchema).toHaveProperty("full");
     });
   });
 
@@ -33,7 +31,7 @@ describe("starwindDocsTool", () => {
       expect(result.documentation).toBeTruthy();
       expect(result.documentation).toContain("Starwind");
       expect(result.full).toBe(false);
-      expect(result.source).toMatch(/^(network|cache)$/);
+      expect(result.resultType).toBe("full");
     });
 
     it("should fetch full documentation from llms-full.txt", async () => {
@@ -60,11 +58,9 @@ describe("starwindDocsTool", () => {
     it("should cache results and return from cache on second call", async () => {
       // First call
       const result1 = await starwindDocsTool.handler({});
-      const source1 = result1.source;
 
-      // Second call - should return from cache
+      // Second call - should return identical cached content
       const result2 = await starwindDocsTool.handler({});
-      expect(result2.source).toBe("cache");
       expect(result2.documentation).toBe(result1.documentation);
     });
 
@@ -124,18 +120,20 @@ describe("starwindDocsTool", () => {
 
     it("should cache specific page results", async () => {
       // First call
-      await starwindDocsTool.handler({ topic: "button" });
+      const first = await starwindDocsTool.handler({ topic: "button" });
 
-      // Second call - should be from cache
+      // Second call - should return identical cached content
       const result = await starwindDocsTool.handler({ topic: "button" });
-      expect(result.source).toBe("cache");
+      expect(result.resultType).toBe("page");
+      expect(result.documentation).toBe(first.documentation);
     });
 
     it("should fall back to llms.txt for unknown topics", async () => {
       const result = await starwindDocsTool.handler({ topic: "zzzznonexistent" });
 
       // Should fall back to llms.txt filtering
-      expect(result.source).toBe("fallback");
+      expect(result.resultType).toBe("filtered");
+      expect(result.note).toBeDefined();
       expect(result.url).toContain("llms.txt");
     });
   });
@@ -153,7 +151,7 @@ describe("starwindDocsTool", () => {
       const result = await starwindDocsTool.handler({});
 
       expect(result.documentation).toBeDefined();
-      expect(result.source).toBeDefined();
+      expect(result.resultType).toBeDefined();
       expect(result.url).toBeDefined();
       expect(result.topic).toBeNull();
       expect(result.full).toBe(false);
