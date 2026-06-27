@@ -1,10 +1,14 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetAddToolState, starwindAddTool } from "./starwind_add_tool";
 
 describe("starwindAddTool", () => {
   beforeEach(() => {
     resetAddToolState(); // Reset cache between tests
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   describe("tool definition", () => {
@@ -44,6 +48,49 @@ describe("starwindAddTool", () => {
       expect(components).toContain("card");
       expect(components).toContain("dialog");
       expect(components.length).toBeGreaterThan(20); // Should have many components
+    });
+
+    it("should use refreshed fallback metadata when component docs cannot be fetched", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockRejectedValue(new Error("offline")),
+      );
+
+      const result = await starwindAddTool.handler({ components: ["color-picker"] });
+
+      expect(result.success).toBe(true);
+      expect(result.componentSource).toBe("fallback");
+      expect(result.componentsToInstall).toEqual(["color-picker"]);
+
+      const components = result.availableComponents as string[];
+      expect(components).toContain("input-group");
+      expect(components).toContain("native-select");
+      expect(components).toContain("kbd");
+      expect(components).not.toContain("combobox");
+    });
+
+    it("should validate current components from compact live metadata", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          text: () =>
+            Promise.resolve(
+              "# Starwind UI - AI Reference Guide ## Installable Components and Documentation Starwind UI currently includes the following installable components: - [Button](https://starwind.dev/docs/components/button) - [Color Picker](https://starwind.dev/docs/components/color-picker) - [Input Group](https://starwind.dev/docs/components/input-group) - [Native Select](https://starwind.dev/docs/components/native-select) - [Kbd](https://starwind.dev/docs/components/kbd) ## Documented Select Patterns - Combobox: Select plus `SelectSearch` pattern documented at https://starwind.dev/docs/components/combobox. Install with `starwind add select`; there is no separate `combobox` install target.",
+            ),
+        }),
+      );
+
+      const result = await starwindAddTool.handler({ components: ["native-select"] });
+
+      expect(result.success).toBe(true);
+      expect(result.componentSource).toBe("network");
+      expect(result.componentsToInstall).toEqual(["native-select"]);
+
+      const components = result.availableComponents as string[];
+      expect(components).toContain("color-picker");
+      expect(components).toContain("input-group");
+      expect(components).not.toContain("combobox");
     });
   });
 

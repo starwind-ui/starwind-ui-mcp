@@ -6,6 +6,10 @@
 import { z } from "zod";
 
 import { detectPackageManager, type PackageManager } from "../utils/package_manager.js";
+import {
+  getStandardComponentMetadata,
+  resetStandardComponentMetadataCache,
+} from "../utils/starwind_component_metadata.js";
 
 /**
  * Interface for starwind add tool arguments
@@ -24,128 +28,10 @@ export interface StarwindAddArgs {
 }
 
 /**
- * Fallback component list - ONLY used if fetching/parsing llms.txt fails
- * This should match the components in https://starwind.dev/llms.txt
- */
-const FALLBACK_COMPONENTS = [
-  "accordion",
-  "alert",
-  "alert-dialog",
-  "aspect-ratio",
-  "avatar",
-  "badge",
-  "breadcrumb",
-  "button",
-  "button-group",
-  "card",
-  "carousel",
-  "checkbox",
-  "collapsible",
-  "combobox",
-  "dialog",
-  "dropdown",
-  "dropzone",
-  "image",
-  "input",
-  "input-otp",
-  "item",
-  "label",
-  "pagination",
-  "progress",
-  "prose",
-  "radio-group",
-  "select",
-  "separator",
-  "sheet",
-  "sidebar",
-  "skeleton",
-  "slider",
-  "spinner",
-  "switch",
-  "table",
-  "tabs",
-  "textarea",
-  "theme-toggle",
-  "toast",
-  "toggle",
-  "tooltip",
-  "video",
-];
-
-/**
- * Cache for fetched components
- */
-interface ComponentCache {
-  components: string[];
-  timestamp: number;
-  expiresAt: number;
-}
-
-let componentCache: ComponentCache | null = null;
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
-
-/**
  * Reset component cache state (for testing purposes)
  */
 export function resetAddToolState(): void {
-  componentCache = null;
-}
-
-/**
- * Parse component slugs from llms.txt content
- * Extracts from markdown links like: - [Component Name](https://starwind.dev/docs/components/component-slug)
- */
-function parseComponentsFromLlmsTxt(content: string): string[] {
-  const components: string[] = [];
-  const regex = /\[.+?\]\(https:\/\/starwind\.dev\/docs\/components\/([a-z0-9-]+)\)/g;
-  let match;
-
-  while ((match = regex.exec(content)) !== null) {
-    const slug = match[1];
-    if (slug && !components.includes(slug)) {
-      components.push(slug);
-    }
-  }
-
-  return components;
-}
-
-/**
- * Fetch available components from llms.txt
- * Returns cached data if available and not expired
- * Falls back to FALLBACK_COMPONENTS on error
- */
-async function getAvailableComponents(): Promise<{ components: string[]; source: string }> {
-  // Check cache first
-  if (componentCache && Date.now() < componentCache.expiresAt) {
-    return { components: componentCache.components, source: "cache" };
-  }
-
-  try {
-    const response = await fetch("https://starwind.dev/llms.txt");
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const content = await response.text();
-    const parsed = parseComponentsFromLlmsTxt(content);
-
-    if (parsed.length === 0) {
-      throw new Error("No components parsed from llms.txt");
-    }
-
-    // Update cache
-    componentCache = {
-      components: parsed,
-      timestamp: Date.now(),
-      expiresAt: Date.now() + CACHE_TTL,
-    };
-
-    return { components: parsed, source: "network" };
-  } catch (error) {
-    // Fall back to hardcoded list
-    return { components: FALLBACK_COMPONENTS, source: "fallback" };
-  }
+  resetStandardComponentMetadataCache();
 }
 
 /**
@@ -246,8 +132,9 @@ export const starwindAddTool = {
     }
 
     // Fetch available components from llms.txt (with caching and fallback)
-    const { components: availableComponents, source: componentSource } =
-      await getAvailableComponents();
+    const { components: componentMetadata, source: componentSource } =
+      await getStandardComponentMetadata();
+    const availableComponents = componentMetadata.map((component) => component.slug);
 
     // Detect package manager (or use override)
     const pmInfo = packageManager
