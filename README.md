@@ -8,7 +8,7 @@
   <a href="https://x.com/boston343builds"><img alt="follow" src="https://shieldcn.dev/x/follow/boston343builds.svg" /></a>
 </p>
 
-A TypeScript implementation of a Model Context Protocol (MCP) server for [Starwind UI](https://starwind.dev/) and [Starwind Pro](https://pro.starwind.dev/), providing tools to help developers work with Starwind UI and Pro components when leveraging AI tools like Claude, Windsurf, Cursor, and more.
+A TypeScript implementation of a Model Context Protocol (MCP) server for [Starwind UI](https://starwind.dev/) and [Starwind Pro](https://pro.starwind.dev/), providing tools to help developers work with Starwind UI and Pro components when leveraging AI tools like Codex, Claude Code, and Cursor.
 
 ## Quick Start
 
