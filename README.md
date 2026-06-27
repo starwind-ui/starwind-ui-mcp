@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@starwind-ui/mcp"><img alt="badge" src="https://shieldcn.dev/npm/@starwind-ui/mcp.svg" /></a>
   <a href="https://github.com/starwind-ui/starwind-ui-mcp"><img alt="badge" src="https://shieldcn.dev/github/starwind-ui/starwind-ui-mcp/stars.svg" /></a>
-  <a href="https://x.com/boston343builds"><img alt="follow" src="https://shieldcn.dev/x/follow/boston343builds.svg" /></a>
+  <a href="https://x.com/boston343builds"><img alt="follow" src="https://shieldcn.dev/x/follow/boston343builds.svg?split=true" /></a>
 </p>
 
 A TypeScript implementation of a Model Context Protocol (MCP) server for [Starwind UI](https://starwind.dev/) and [Starwind Pro](https://pro.starwind.dev/), providing tools to help developers work with Starwind UI and Pro components when leveraging AI tools like Codex, Claude Code, and Cursor.
