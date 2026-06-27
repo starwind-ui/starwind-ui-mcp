@@ -7,6 +7,11 @@ import { z } from "zod";
 
 import { detectPackageManager, type PackageManager } from "../utils/package_manager.js";
 import {
+  getDlxCommand,
+  getExistingProjectProSetupCommand,
+  getProInitCommand,
+} from "../utils/starwind_commands.js";
+import {
   getStandardComponentMetadata,
   resetStandardComponentMetadataCache,
 } from "../utils/starwind_component_metadata.js";
@@ -32,21 +37,6 @@ export interface StarwindAddArgs {
  */
 export function resetAddToolState(): void {
   resetStandardComponentMetadataCache();
-}
-
-/**
- * Get the dlx command for a package manager
- */
-function getDlxCommand(pm: PackageManager): string {
-  switch (pm) {
-    case "pnpm":
-      return "pnpm dlx";
-    case "yarn":
-      return "yarn dlx";
-    case "npm":
-    default:
-      return "npx";
-  }
 }
 
 /**
@@ -196,7 +186,7 @@ export const starwindAddTool = {
     // Add init command if requested
     if (init) {
       const initCommand = isPro
-        ? `${dlxCommand} starwind@latest init --defaults --pro`
+        ? getProInitCommand(dlxCommand)
         : `${dlxCommand} starwind@latest init --defaults`;
       (response.commands as string[]).push(initCommand);
       response.initNote = isPro
@@ -246,8 +236,13 @@ export const starwindAddTool = {
 
     // Add important note about Pro initialization
     if (isPro) {
+      response.proSetup = {
+        newProjectCommand: getProInitCommand(dlxCommand),
+        existingProjectCommand: getExistingProjectProSetupCommand(dlxCommand, pmInfo.name),
+        note: "For a new project, initialize with --pro. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
+      };
       response.proNote =
-        "IMPORTANT: Starwind Pro blocks require initialization with --pro flag. Make sure the project was initialized with 'starwind@latest init --defaults --pro' before adding Pro blocks.";
+        "IMPORTANT: Starwind Pro blocks require Starwind Pro setup. For a new project, initialize with --pro. For an already initialized Starwind UI project, run setup once before adding Pro blocks.";
     }
 
     return response;

@@ -6,6 +6,10 @@ import {
   type StandardComponentMetadata,
   type StandardComponentMetadataSource,
 } from "../utils/starwind_component_metadata.js";
+import {
+  getExistingProjectProSetupCommand,
+  getProInitCommand,
+} from "../utils/starwind_commands.js";
 
 interface ManifestBlock {
   id: string;
@@ -83,6 +87,11 @@ interface StarwindSearchResult {
     availableCategories: string[];
     pagination: SearchPagination;
     results: ProBlockResult[];
+  };
+  proSetup?: {
+    newProjectCommand: string;
+    existingProjectCommand: string;
+    note: string;
   };
   message?: string;
 }
@@ -307,6 +316,14 @@ export const starwindSearchTool = {
     } else if (totalMatches === 0) {
       result.message =
         "No Starwind components or Pro blocks found. Try a broader query or remove filters.";
+    }
+
+    if (proResults.length > 0) {
+      result.proSetup = {
+        newProjectCommand: getProInitCommand("npx"),
+        existingProjectCommand: getExistingProjectProSetupCommand("npx"),
+        note: "For a new project, initialize with --pro. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
+      };
     }
 
     return result;

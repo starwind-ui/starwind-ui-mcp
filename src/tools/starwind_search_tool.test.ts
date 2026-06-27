@@ -168,6 +168,19 @@ describe("starwindSearchTool", () => {
       expect(result.proBlocks.source).toBe("network");
     });
 
+    it("should include existing-project setup guidance when Pro blocks are returned", async () => {
+      mockFetch();
+
+      const result = await starwindSearchTool.handler({ query: "hero" });
+
+      expect(result.proSetup).toEqual({
+        newProjectCommand: "npx starwind@latest init --defaults --pro",
+        existingProjectCommand: "npx starwind@latest setup --yes",
+        note: "For a new project, initialize with --pro. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
+      });
+      expect(JSON.stringify(result.proSetup)).not.toContain("Re-run init");
+    });
+
     it("should not duplicate --yes when a Pro block install command already includes it", async () => {
       const manifest = createManifest(1);
       manifest.blocks[0].installCommand =

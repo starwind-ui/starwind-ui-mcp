@@ -308,6 +308,23 @@ describe("starwindAddTool", () => {
       expect(result.proNote).toContain("Starwind Pro");
     });
 
+    it("should guide existing projects to run setup before adding Pro blocks", async () => {
+      const result = await starwindAddTool.handler({
+        components: ["@starwind-pro/hero-01"],
+        packageManager: "pnpm",
+      });
+
+      expect(result.command).toBe("pnpm dlx starwind@latest add @starwind-pro/hero-01 --yes");
+      expect(result.proSetup).toEqual({
+        newProjectCommand: "pnpm dlx starwind@latest init --defaults --pro",
+        existingProjectCommand:
+          "pnpm dlx starwind@latest setup --yes --package-manager pnpm",
+        note: "For a new project, initialize with --pro. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
+      });
+      expect(result.proNote).toContain("already initialized");
+      expect(result.proNote).not.toContain("Re-run init");
+    });
+
     it("should have pro in inputSchema", () => {
       expect(starwindAddTool.inputSchema).toHaveProperty("pro");
     });
