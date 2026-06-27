@@ -62,3 +62,5 @@ pnpm changeset
 1. Create a new tool file in `src/tools/`
 2. Register the tool in `src/tools/index.ts`
 3. Rebuild with `pnpm build`
+
+Keep the public MCP tool surface compact and intent-based. Do not add thin wrappers for every Starwind CLI command by default; uncommon or destructive operations such as setup, update, and remove should usually appear as command guidance from an existing tool unless they become common enough to justify their own MCP tool.
