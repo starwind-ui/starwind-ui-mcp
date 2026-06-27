@@ -60,12 +60,14 @@ Detailed instructions:
 
 ## Available Tools
 
-| Tool Name                    | Description                                                                   |
-| ---------------------------- | ----------------------------------------------------------------------------- |
-| `starwind_init`              | Initializes a Starwind UI project (Pro by default). Use this FIRST.           |
-| `starwind_docs`              | Fetches live documentation from starwind.dev with caching and topic filtering |
-| `starwind_add`               | Generates validated install commands with package manager detection           |
-| `search_starwind_pro_blocks` | Searches Starwind Pro blocks by query, category, or plan type                 |
+| Tool Name         | Description                                                                     |
+| ----------------- | ------------------------------------------------------------------------------- |
+| `starwind_init`   | Initializes a Starwind UI project (Pro by default). Use this FIRST.             |
+| `starwind_docs`   | Fetches live documentation from starwind.dev with caching and topic filtering   |
+| `starwind_add`    | Generates validated install commands with package manager detection             |
+| `starwind_search` | Searches Starwind UI components and Starwind Pro blocks with CLI-shaped filters |
+
+The MCP server intentionally keeps a compact, intent-based tool surface. It does not expose standalone wrappers for every Starwind CLI command, such as setup, update, or remove.
 
 ## What is MCP?
 
@@ -75,7 +77,7 @@ The Model Context Protocol (MCP) is a protocol for extending AI capabilities thr
 
 - **Live Documentation** - Fetches up-to-date docs from starwind.dev/llms.txt
 - **Component Validation** - Validates components against the live component list
-- **Pro Blocks Search** - Search and discover Starwind Pro blocks by query, category, or plan
+- **Starwind Search** - Search and discover standard components and Pro blocks by query, category, or plan
 - **Package Manager Detection** - Auto-detects npm, yarn, or pnpm
 - **Caching & Rate Limiting** - Efficient caching with sensible rate limits
 - **TypeScript** - Built with TypeScript for type safety

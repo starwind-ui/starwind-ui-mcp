@@ -1,10 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ZodRawShape } from "zod";
 
-import { searchProBlocksTool } from "./search_pro_blocks_tool.js";
 import { starwindAddTool } from "./starwind_add_tool.js";
 import { starwindDocsTool } from "./starwind_docs_tool.js";
 import { starwindInitTool } from "./starwind_init_tool.js";
+import { starwindSearchTool } from "./starwind_search_tool.js";
 
 /**
  * Shape shared by every tool definition registered with the MCP server.
@@ -28,8 +28,8 @@ const tools: ToolDefinition[] = [
   starwindDocsTool,
   // Generates validated install commands
   starwindAddTool,
-  // Searches Starwind Pro blocks
-  searchProBlocksTool,
+  // Searches Starwind components and Pro blocks
+  starwindSearchTool,
   // Dedicated project initialization
   starwindInitTool,
 ];

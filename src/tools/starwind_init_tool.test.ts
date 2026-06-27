@@ -57,8 +57,9 @@ describe("starwindInitTool", () => {
 
       const nextSteps = result.nextSteps as string[];
       expect(nextSteps).toContain(
-        "Or use search_starwind_pro_blocks to find Pro blocks like heroes, footers, etc.",
+        "Or use starwind_search to find components and Pro blocks like heroes, footers, etc.",
       );
+      expect(nextSteps.join("\n")).not.toContain("search_starwind_pro_blocks");
     });
   });
 

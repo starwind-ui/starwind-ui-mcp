@@ -88,7 +88,7 @@ export const starwindInitTool = {
         ? [
             "Run the command above in your project directory",
             "Then use starwind_add to add components: e.g., button, card, dialog",
-            "Or use search_starwind_pro_blocks to find Pro blocks like heroes, footers, etc.",
+            "Or use starwind_search to find components and Pro blocks like heroes, footers, etc.",
           ]
         : [
             "Run the command above in your project directory",

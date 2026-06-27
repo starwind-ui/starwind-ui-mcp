@@ -47,13 +47,18 @@ describe("setupTools - MCP registration", () => {
       const { tools: listed } = await client.listTools();
       const names = listed.map((t) => t.name).sort();
 
-      expect(names).toEqual([
-        "search_starwind_pro_blocks",
-        "starwind_add",
-        "starwind_docs",
-        "starwind_init",
-      ]);
+      expect(names).toEqual(["starwind_add", "starwind_docs", "starwind_init", "starwind_search"]);
       expect(listed).toHaveLength(tools.length);
+    });
+
+    it("keeps advanced CLI wrappers out of the public MCP tool surface", async () => {
+      const { tools: listed } = await client.listTools();
+      const names = listed.map((t) => t.name);
+
+      expect(names).not.toContain("search_starwind_pro_blocks");
+      expect(names).not.toContain("starwind_setup");
+      expect(names).not.toContain("starwind_update");
+      expect(names).not.toContain("starwind_remove");
     });
 
     it("provides a description and JSON-Schema input for each tool", async () => {
