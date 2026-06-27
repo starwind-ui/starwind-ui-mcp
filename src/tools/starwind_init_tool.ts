@@ -98,20 +98,14 @@ export const starwindInitTool = {
         ? {
             proSetup: {
               newProjectCommand: getProInitCommand(dlxCommand),
-              existingProjectCommand: getExistingProjectProSetupCommand(
-                dlxCommand,
-                pmInfo.name,
-              ),
+              existingProjectCommand: getExistingProjectProSetupCommand(dlxCommand, pmInfo.name),
               note: "Use init for a new project. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
             },
           }
         : {
             proSetup: {
               newProjectCommand: getProInitCommand(dlxCommand),
-              existingProjectCommand: getExistingProjectProSetupCommand(
-                dlxCommand,
-                pmInfo.name,
-              ),
+              existingProjectCommand: getExistingProjectProSetupCommand(dlxCommand, pmInfo.name),
               note: "To use Pro blocks later, use init --pro for a new project or setup for an already initialized Starwind UI project.",
             },
           }),

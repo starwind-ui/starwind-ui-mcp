@@ -1,4 +1,4 @@
-import { describe, expect,it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { starwindInitTool } from "./starwind_init_tool.js";
 
@@ -72,8 +72,7 @@ describe("starwindInitTool", () => {
       expect(result.command).toBe("pnpm dlx starwind@latest init --defaults --pro");
       expect(result.proSetup).toEqual({
         newProjectCommand: "pnpm dlx starwind@latest init --defaults --pro",
-        existingProjectCommand:
-          "pnpm dlx starwind@latest setup --yes --package-manager pnpm",
+        existingProjectCommand: "pnpm dlx starwind@latest setup --yes --package-manager pnpm",
         note: "Use init for a new project. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
       });
     });
@@ -103,8 +102,7 @@ describe("starwindInitTool", () => {
 
       expect(result.proSetup).toEqual({
         newProjectCommand: "pnpm dlx starwind@latest init --defaults --pro",
-        existingProjectCommand:
-          "pnpm dlx starwind@latest setup --yes --package-manager pnpm",
+        existingProjectCommand: "pnpm dlx starwind@latest setup --yes --package-manager pnpm",
         note: "To use Pro blocks later, use init --pro for a new project or setup for an already initialized Starwind UI project.",
       });
       expect(serialized).toContain("starwind@latest setup --yes");

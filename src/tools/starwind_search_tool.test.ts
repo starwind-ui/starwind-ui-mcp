@@ -71,9 +71,10 @@ function createManifest(blockCount = 4) {
           categories: ["hero"],
           keywords: ["hero"],
           plan: index % 2 === 0 ? "free" : "pro",
-          installCommand: `npx starwind@latest add @starwind-pro/hero-${String(
-            index + 1,
-          ).padStart(2, "0")}`,
+          installCommand: `npx starwind@latest add @starwind-pro/hero-${String(index + 1).padStart(
+            2,
+            "0",
+          )}`,
           previewUrl: `/components/hero-${String(index + 1).padStart(2, "0")}`,
         }));
 

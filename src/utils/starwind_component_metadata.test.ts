@@ -72,10 +72,7 @@ describe("Starwind standard component metadata", () => {
   });
 
   it("uses refreshed fallback metadata when live docs cannot be fetched", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new Error("offline")),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
 
     const result = await getStandardComponentMetadata();
     const slugs = result.components.map((component) => component.slug);

@@ -51,10 +51,7 @@ describe("starwindAddTool", () => {
     });
 
     it("should use refreshed fallback metadata when component docs cannot be fetched", async () => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockRejectedValue(new Error("offline")),
-      );
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
 
       const result = await starwindAddTool.handler({ components: ["color-picker"] });
 
@@ -317,8 +314,7 @@ describe("starwindAddTool", () => {
       expect(result.command).toBe("pnpm dlx starwind@latest add @starwind-pro/hero-01 --yes");
       expect(result.proSetup).toEqual({
         newProjectCommand: "pnpm dlx starwind@latest init --defaults --pro",
-        existingProjectCommand:
-          "pnpm dlx starwind@latest setup --yes --package-manager pnpm",
+        existingProjectCommand: "pnpm dlx starwind@latest setup --yes --package-manager pnpm",
         note: "For a new project, initialize with --pro. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
       });
       expect(result.proNote).toContain("already initialized");

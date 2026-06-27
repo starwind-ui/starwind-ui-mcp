@@ -1,15 +1,15 @@
 import { z } from "zod";
 
 import {
+  getExistingProjectProSetupCommand,
+  getProInitCommand,
+} from "../utils/starwind_commands.js";
+import {
   getStandardComponentMetadata,
   resetStandardComponentMetadataCache,
   type StandardComponentMetadata,
   type StandardComponentMetadataSource,
 } from "../utils/starwind_component_metadata.js";
-import {
-  getExistingProjectProSetupCommand,
-  getProInitCommand,
-} from "../utils/starwind_commands.js";
 
 interface ManifestBlock {
   id: string;
@@ -131,7 +131,9 @@ async function getManifest(): Promise<{ manifest: Manifest; source: "network" | 
 
   const response = await fetch(MANIFEST_URL);
   if (!response.ok) {
-    throw new Error(`Failed to fetch Starwind Pro manifest: ${response.status} ${response.statusText}`);
+    throw new Error(
+      `Failed to fetch Starwind Pro manifest: ${response.status} ${response.statusText}`,
+    );
   }
 
   const manifest = (await response.json()) as Manifest;
@@ -248,10 +250,7 @@ export const starwindSearchTool = {
     "Searches Starwind UI standard components and Starwind Pro blocks by query. Mirrors the Starwind CLI search shape with Pro block plan/category filters plus limit and offset pagination.",
   inputSchema: {
     query: z.string().optional().describe("Search query for components and Pro blocks."),
-    plan: z
-      .enum(["free", "pro"])
-      .optional()
-      .describe("Filter Starwind Pro blocks by plan type."),
+    plan: z.enum(["free", "pro"]).optional().describe("Filter Starwind Pro blocks by plan type."),
     category: z.string().optional().describe("Filter Starwind Pro blocks by category."),
     limit: z
       .number()
