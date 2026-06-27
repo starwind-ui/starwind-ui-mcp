@@ -1,4 +1,11 @@
+import { z } from "zod";
+
 import { detectPackageManager, type PackageManager } from "../utils/package_manager.js";
+import {
+  getDlxCommand,
+  getExistingProjectProSetupCommand,
+  getProInitCommand,
+} from "../utils/starwind_commands.js";
 
 /**
  * Arguments for the starwind_init tool
@@ -10,22 +17,6 @@ interface StarwindInitArgs {
 }
 
 /**
- * Get the dlx command for a package manager
- */
-function getDlxCommand(packageManager: PackageManager): string {
-  switch (packageManager) {
-    case "npm":
-      return "npx";
-    case "yarn":
-      return "yarn dlx";
-    case "pnpm":
-      return "pnpm dlx";
-    default:
-      return "npx";
-  }
-}
-
-/**
  * Starwind Init tool - dedicated tool for initializing Starwind UI projects
  *
  * Defaults to Pro setup since it doesn't break anything and enables Pro blocks.
@@ -33,28 +24,24 @@ function getDlxCommand(packageManager: PackageManager): string {
 export const starwindInitTool = {
   name: "starwind_init",
   description:
-    "Initializes a Starwind UI project. ALWAYS use this tool FIRST before adding any Starwind components or blocks. Defaults to Pro setup (recommended) which enables both standard components AND Pro blocks. Set pro=false only if you specifically want standard-only setup.",
+    "Initializes a new Starwind UI project. Defaults to Pro setup, which enables standard components and Pro blocks for new projects. For an already initialized Starwind UI project that needs Pro support, use starwind setup --yes instead of reinitializing.",
   inputSchema: {
-    type: "object",
-    properties: {
-      cwd: {
-        type: "string",
-        description: "Working directory for package manager detection. Defaults to current directory.",
-      },
-      packageManager: {
-        type: "string",
-        enum: ["npm", "pnpm", "yarn"],
-        description:
-          "Override the auto-detected package manager. Use this if package manager detection fails or you want to force a specific one.",
-      },
-      pro: {
-        type: "boolean",
-        description:
-          "Whether to initialize with Starwind Pro support. Defaults to TRUE. Pro setup enables both standard components AND Pro blocks. Only set to false if you specifically want standard-only setup.",
-        default: true,
-      },
-    },
-    required: [],
+    cwd: z
+      .string()
+      .optional()
+      .describe("Working directory for package manager detection. Defaults to current directory."),
+    packageManager: z
+      .enum(["npm", "pnpm", "yarn"])
+      .optional()
+      .describe(
+        "Override the auto-detected package manager. Use this if package manager detection fails or you want to force a specific one.",
+      ),
+    pro: z
+      .boolean()
+      .optional()
+      .describe(
+        "Whether to initialize with Starwind Pro support. Defaults to TRUE. Pro setup enables both standard components AND Pro blocks. Only set to false if you specifically want standard-only setup.",
+      ),
   },
 
   /**
@@ -73,7 +60,7 @@ export const starwindInitTool = {
 
     // Build init command
     const initCommand = isPro
-      ? `${dlxCommand} starwind@latest init --defaults --pro`
+      ? getProInitCommand(dlxCommand)
       : `${dlxCommand} starwind@latest init --defaults`;
 
     return {
@@ -85,12 +72,12 @@ export const starwindInitTool = {
       setupType: isPro ? "Starwind Pro" : "Starwind Standard",
       description: isPro
         ? "This command initializes Starwind UI with Pro support. You can use both standard components (button, card, etc.) AND Pro blocks (@starwind-pro/hero-01, etc.)."
-        : "This command initializes Starwind UI standard. You can only use standard components. To use Pro blocks, re-run init with pro=true.",
+        : "This command initializes Starwind UI standard. You can only use standard components from this new-project setup. To use Pro blocks later, use init --pro for a new project or setup for an already initialized Starwind UI project.",
       nextSteps: isPro
         ? [
             "Run the command above in your project directory",
             "Then use starwind_add to add components: e.g., button, card, dialog",
-            "Or use search_starwind_pro_blocks to find Pro blocks like heroes, footers, etc.",
+            "Or use starwind_search to find components and Pro blocks like heroes, footers, etc.",
           ]
         : [
             "Run the command above in your project directory",
@@ -107,6 +94,21 @@ export const starwindInitTool = {
         "--pro": "Enables Starwind Pro support for premium blocks",
         "--yes": "Skips confirmation prompts (used by add command, not init)",
       },
+      ...(isPro
+        ? {
+            proSetup: {
+              newProjectCommand: getProInitCommand(dlxCommand),
+              existingProjectCommand: getExistingProjectProSetupCommand(dlxCommand, pmInfo.name),
+              note: "Use init for a new project. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
+            },
+          }
+        : {
+            proSetup: {
+              newProjectCommand: getProInitCommand(dlxCommand),
+              existingProjectCommand: getExistingProjectProSetupCommand(dlxCommand, pmInfo.name),
+              note: "To use Pro blocks later, use init --pro for a new project or setup for an already initialized Starwind UI project.",
+            },
+          }),
     };
   },
 };

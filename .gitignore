@@ -56,3 +56,7 @@ coverage/
 *.tmp
 *.temp
 .cache/
+
+# AI items
+.agents/
+.scratch/

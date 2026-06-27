@@ -3,7 +3,19 @@
  * Generates validated install commands for Starwind UI components
  */
 
+import { z } from "zod";
+
 import { detectPackageManager, type PackageManager } from "../utils/package_manager.js";
+import {
+  getDlxCommand,
+  getExistingProjectProSetupCommand,
+  getProInitCommand,
+} from "../utils/starwind_commands.js";
+import {
+  getStandardComponentMetadata,
+  resetStandardComponentMetadataCache,
+  type StandardComponentMetadataSource,
+} from "../utils/starwind_component_metadata.js";
 
 /**
  * Interface for starwind add tool arguments
@@ -22,143 +34,35 @@ export interface StarwindAddArgs {
 }
 
 /**
- * Fallback component list - ONLY used if fetching/parsing llms.txt fails
- * This should match the components in https://starwind.dev/llms.txt
- */
-const FALLBACK_COMPONENTS = [
-  "accordion",
-  "alert",
-  "alert-dialog",
-  "aspect-ratio",
-  "avatar",
-  "badge",
-  "breadcrumb",
-  "button",
-  "button-group",
-  "card",
-  "carousel",
-  "checkbox",
-  "collapsible",
-  "combobox",
-  "dialog",
-  "dropdown",
-  "dropzone",
-  "image",
-  "input",
-  "input-otp",
-  "item",
-  "label",
-  "pagination",
-  "progress",
-  "prose",
-  "radio-group",
-  "select",
-  "separator",
-  "sheet",
-  "sidebar",
-  "skeleton",
-  "slider",
-  "spinner",
-  "switch",
-  "table",
-  "tabs",
-  "textarea",
-  "theme-toggle",
-  "toast",
-  "toggle",
-  "tooltip",
-  "video",
-];
-
-/**
- * Cache for fetched components
- */
-interface ComponentCache {
-  components: string[];
-  timestamp: number;
-  expiresAt: number;
-}
-
-let componentCache: ComponentCache | null = null;
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
-
-/**
  * Reset component cache state (for testing purposes)
  */
 export function resetAddToolState(): void {
-  componentCache = null;
+  resetStandardComponentMetadataCache();
 }
 
-/**
- * Parse component slugs from llms.txt content
- * Extracts from markdown links like: - [Component Name](https://starwind.dev/docs/components/component-slug)
- */
-function parseComponentsFromLlmsTxt(content: string): string[] {
-  const components: string[] = [];
-  const regex = /\[.+?\]\(https:\/\/starwind\.dev\/docs\/components\/([a-z0-9-]+)\)/g;
-  let match;
+const STANDARD_COMPONENT_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const PRO_BLOCK_PATTERN = /^@starwind-pro\/[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-  while ((match = regex.exec(content)) !== null) {
-    const slug = match[1];
-    if (slug && !components.includes(slug)) {
-      components.push(slug);
-    }
-  }
-
-  return components;
+function normalizeComponentName(component: string): string {
+  return component.trim().toLowerCase();
 }
 
-/**
- * Fetch available components from llms.txt
- * Returns cached data if available and not expired
- * Falls back to FALLBACK_COMPONENTS on error
- */
-async function getAvailableComponents(): Promise<{ components: string[]; source: string }> {
-  // Check cache first
-  if (componentCache && Date.now() < componentCache.expiresAt) {
-    return { components: componentCache.components, source: "cache" };
-  }
-
-  try {
-    const response = await fetch("https://starwind.dev/llms.txt");
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const content = await response.text();
-    const parsed = parseComponentsFromLlmsTxt(content);
-
-    if (parsed.length === 0) {
-      throw new Error("No components parsed from llms.txt");
-    }
-
-    // Update cache
-    componentCache = {
-      components: parsed,
-      timestamp: Date.now(),
-      expiresAt: Date.now() + CACHE_TTL,
-    };
-
-    return { components: parsed, source: "network" };
-  } catch (error) {
-    // Fall back to hardcoded list
-    return { components: FALLBACK_COMPONENTS, source: "fallback" };
-  }
+function isAllComponentRequest(component: string): boolean {
+  return component === "--all" || component === "all";
 }
 
-/**
- * Get the dlx command for a package manager
- */
-function getDlxCommand(pm: PackageManager): string {
-  switch (pm) {
-    case "pnpm":
-      return "pnpm dlx";
-    case "yarn":
-      return "yarn dlx";
-    case "npm":
-    default:
-      return "npx";
-  }
+function isProBlockName(component: string): boolean {
+  return PRO_BLOCK_PATTERN.test(component);
+}
+
+function isAllowedComponentName(component: string): boolean {
+  const normalized = normalizeComponentName(component);
+
+  return (
+    isAllComponentRequest(normalized) ||
+    STANDARD_COMPONENT_PATTERN.test(normalized) ||
+    PRO_BLOCK_PATTERN.test(normalized)
+  );
 }
 
 /**
@@ -204,52 +108,58 @@ export const starwindAddTool = {
   description:
     "Generates the installation command for Starwind UI components. Validates component names and returns the correct CLI command based on the detected package manager. Use this after consulting starwind_docs to know which components to install. For Starwind Pro blocks (prefixed with @starwind-pro/), set pro=true or the tool will auto-detect it.",
   inputSchema: {
-    type: "object",
-    properties: {
-      components: {
-        type: "array",
-        items: { type: "string" },
-        description:
-          "Array of component names to install (e.g., ['button', 'card', 'dialog']). Use '--all' as a single item to install all components.",
-      },
-      init: {
-        type: "boolean",
-        description:
-          "Whether to include the init command for new projects. Set to true if Starwind UI has not been initialized in the project yet.",
-      },
-      pro: {
-        type: "boolean",
-        description:
-          "Set to true for Starwind Pro projects. This adds --pro to the init command. Required when using @starwind-pro/ blocks. Auto-detected if components contain @starwind-pro/ prefix.",
-      },
-      cwd: {
-        type: "string",
-        description:
-          "Working directory for package manager detection. Defaults to current directory.",
-      },
-      packageManager: {
-        type: "string",
-        enum: ["npm", "pnpm", "yarn"],
-        description:
-          "Override the auto-detected package manager. Use this if package manager detection fails or you want to force a specific one.",
-      },
-    },
-    required: ["components"],
+    components: z
+      .array(z.string())
+      .describe(
+        "Array of component names to install (e.g., ['button', 'card', 'dialog']). Use '--all' as a single item to install all components.",
+      ),
+    init: z
+      .boolean()
+      .optional()
+      .describe(
+        "Whether to include the init command for new projects. Set to true if Starwind UI has not been initialized in the project yet.",
+      ),
+    pro: z
+      .boolean()
+      .optional()
+      .describe(
+        "Set to true for Starwind Pro projects. This adds --pro to the init command. Required when using @starwind-pro/ blocks. Auto-detected if components contain @starwind-pro/ prefix.",
+      ),
+    cwd: z
+      .string()
+      .optional()
+      .describe("Working directory for package manager detection. Defaults to current directory."),
+    packageManager: z
+      .enum(["npm", "pnpm", "yarn"])
+      .optional()
+      .describe(
+        "Override the auto-detected package manager. Use this if package manager detection fails or you want to force a specific one.",
+      ),
   },
   handler: async (args: StarwindAddArgs) => {
     const { components, init = false, cwd, packageManager } = args;
-
-    // Auto-detect Pro mode if any component has @starwind-pro/ prefix
-    const hasProComponents = components.some((c) => c.toLowerCase().includes("@starwind-pro/"));
-    const isPro = args.pro === true || hasProComponents;
 
     if (!components || components.length === 0) {
       throw new Error("At least one component must be specified");
     }
 
-    // Fetch available components from llms.txt (with caching and fallback)
-    const { components: availableComponents, source: componentSource } =
-      await getAvailableComponents();
+    const invalidComponentNames = components.filter(
+      (component) => !isAllowedComponentName(component),
+    );
+    if (invalidComponentNames.length > 0) {
+      return {
+        success: false,
+        error: "Invalid component name",
+        invalidComponents: invalidComponentNames,
+        hint: "Component names may only include lowercase letters, numbers, hyphens, '--all', or '@starwind-pro/<block-name>'.",
+      };
+    }
+
+    const normalizedComponents = components.map(normalizeComponentName);
+
+    // Auto-detect Pro mode if any component has a valid @starwind-pro/ prefix
+    const hasProComponents = normalizedComponents.some(isProBlockName);
+    const isPro = args.pro === true || hasProComponents;
 
     // Detect package manager (or use override)
     const pmInfo = packageManager
@@ -258,28 +168,31 @@ export const starwindAddTool = {
     const dlxCommand = getDlxCommand(pmInfo.name);
 
     // Check for --all flag
-    const installAll = components.some(
-      (c) => c.toLowerCase() === "--all" || c.toLowerCase() === "all",
-    );
+    const installAll = normalizedComponents.some(isAllComponentRequest);
 
     let addCommand: string;
     let validation: ReturnType<typeof validateComponents> | null = null;
+    let availableComponents: string[] | undefined;
+    let componentSource: StandardComponentMetadataSource | undefined;
 
     // Separate Pro blocks from standard components
-    const proBlocks = components.filter((c) => c.toLowerCase().includes("@starwind-pro/"));
-    const standardComponents = components.filter((c) => !c.toLowerCase().includes("@starwind-pro/"));
+    const proBlocks = normalizedComponents.filter(isProBlockName);
+    const standardComponents = normalizedComponents.filter(
+      (component) => !isProBlockName(component) && !isAllComponentRequest(component),
+    );
 
     if (installAll) {
       addCommand = `${dlxCommand} starwind@latest add --all --yes`;
     } else if (proBlocks.length > 0 && standardComponents.length === 0) {
-      // Only Pro blocks - no validation needed, use as-is
       addCommand = `${dlxCommand} starwind@latest add ${proBlocks.join(" ")} --yes`;
     } else {
+      // Fetch available components from llms.txt only when standard validation needs it.
+      const { components: componentMetadata, source } = await getStandardComponentMetadata();
+      componentSource = source;
+      availableComponents = componentMetadata.map((component) => component.slug);
+
       // Validate standard components against fetched list
-      validation = validateComponents(
-        standardComponents.length > 0 ? standardComponents : components,
-        availableComponents,
-      );
+      validation = validateComponents(standardComponents, availableComponents);
 
       if (validation.valid.length === 0 && proBlocks.length === 0) {
         return {
@@ -303,13 +216,15 @@ export const starwindAddTool = {
       success: true,
       packageManager: pmInfo.name,
       commands: [] as string[],
-      componentSource,
     };
+    if (componentSource) {
+      response.componentSource = componentSource;
+    }
 
     // Add init command if requested
     if (init) {
       const initCommand = isPro
-        ? `${dlxCommand} starwind@latest init --defaults --pro`
+        ? getProInitCommand(dlxCommand)
         : `${dlxCommand} starwind@latest init --defaults`;
       (response.commands as string[]).push(initCommand);
       response.initNote = isPro
@@ -346,7 +261,9 @@ export const starwindAddTool = {
       response.componentsToInstall = ["all"];
     }
 
-    response.availableComponents = availableComponents;
+    if (availableComponents) {
+      response.availableComponents = availableComponents;
+    }
     response.instructions =
       "Run the command in your project directory. Make sure you have an Astro project with Tailwind CSS v4 configured.";
     response.cliFlags = {
@@ -359,8 +276,13 @@ export const starwindAddTool = {
 
     // Add important note about Pro initialization
     if (isPro) {
+      response.proSetup = {
+        newProjectCommand: getProInitCommand(dlxCommand),
+        existingProjectCommand: getExistingProjectProSetupCommand(dlxCommand, pmInfo.name),
+        note: "For a new project, initialize with --pro. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
+      };
       response.proNote =
-        "IMPORTANT: Starwind Pro blocks require initialization with --pro flag. Make sure the project was initialized with 'starwind@latest init --defaults --pro' before adding Pro blocks.";
+        "IMPORTANT: Starwind Pro blocks require Starwind Pro setup. For a new project, initialize with --pro. For an already initialized Starwind UI project, run setup once before adding Pro blocks.";
     }
 
     return response;

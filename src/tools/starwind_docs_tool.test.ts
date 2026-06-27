@@ -1,10 +1,14 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetDocsToolState, starwindDocsTool } from "./starwind_docs_tool";
 
 describe("starwindDocsTool", () => {
   beforeEach(() => {
     resetDocsToolState(); // Reset cache between tests
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   describe("tool definition", () => {
@@ -18,10 +22,8 @@ describe("starwindDocsTool", () => {
     });
 
     it("should have correct input schema", () => {
-      expect(starwindDocsTool.inputSchema.type).toBe("object");
-      expect(starwindDocsTool.inputSchema.properties).toHaveProperty("topic");
-      expect(starwindDocsTool.inputSchema.properties).toHaveProperty("full");
-      expect(starwindDocsTool.inputSchema.required).toEqual([]);
+      expect(starwindDocsTool.inputSchema).toHaveProperty("topic");
+      expect(starwindDocsTool.inputSchema).toHaveProperty("full");
     });
   });
 
@@ -33,7 +35,7 @@ describe("starwindDocsTool", () => {
       expect(result.documentation).toBeTruthy();
       expect(result.documentation).toContain("Starwind");
       expect(result.full).toBe(false);
-      expect(result.source).toMatch(/^(network|cache)$/);
+      expect(result.resultType).toBe("full");
     });
 
     it("should fetch full documentation from llms-full.txt", async () => {
@@ -58,25 +60,39 @@ describe("starwindDocsTool", () => {
 
   describe("handler - caching", () => {
     it("should cache results and return from cache on second call", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve("# Starwind\n\nButton docs"),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
       // First call
       const result1 = await starwindDocsTool.handler({});
-      const source1 = result1.source;
+      expect(fetchMock).toHaveBeenCalledTimes(1);
 
-      // Second call - should return from cache
+      // Second call - should return identical cached content
       const result2 = await starwindDocsTool.handler({});
-      expect(result2.source).toBe("cache");
       expect(result2.documentation).toBe(result1.documentation);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it("should include cache info in cached response", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve("# Starwind\n\nButton docs"),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
       // First call to populate cache
       await starwindDocsTool.handler({});
+      expect(fetchMock).toHaveBeenCalledTimes(1);
 
       // Second call - from cache
       const result = await starwindDocsTool.handler({});
       expect(result.cacheInfo).toBeDefined();
       expect(result.cacheInfo?.age).toBeDefined();
       expect(result.cacheInfo?.remainingTtl).toBeDefined();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -101,7 +117,7 @@ describe("starwindDocsTool", () => {
       const result = await starwindDocsTool.handler({ topic: "sidebar" });
 
       expect(result.topic).toBe("sidebar");
-      expect(result.url).toContain("/docs/components/sidebar/markdown.md");
+      expect(result.url).toContain("/docs/components/sidebar.md");
       expect(result.pageType).toBe("component");
       expect(result.documentation).toBeTruthy();
     });
@@ -110,8 +126,24 @@ describe("starwindDocsTool", () => {
       const result = await starwindDocsTool.handler({ topic: "installation" });
 
       expect(result.topic).toBe("installation");
-      expect(result.url).toContain("/docs/getting-started/installation/markdown.md");
+      expect(result.url).toContain("/docs/getting-started/installation.md");
       expect(result.pageType).toBe("guide");
+    });
+
+    it("should mark fallback component pages as components when the page fetch succeeds", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          text: () => Promise.resolve("# Color Picker\n\nComponent docs"),
+        }),
+      );
+
+      const result = await starwindDocsTool.handler({ topic: "color-picker" });
+
+      expect(result.resultType).toBe("page");
+      expect(result.url).toBe("https://starwind.dev/docs/components/color-picker.md");
+      expect(result.pageType).toBe("component");
     });
 
     it("should handle theming topic", async () => {
@@ -123,19 +155,29 @@ describe("starwindDocsTool", () => {
     });
 
     it("should cache specific page results", async () => {
-      // First call
-      await starwindDocsTool.handler({ topic: "button" });
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve("# Button\n\nButton docs"),
+      });
+      vi.stubGlobal("fetch", fetchMock);
 
-      // Second call - should be from cache
+      // First call
+      const first = await starwindDocsTool.handler({ topic: "button" });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Second call - should return identical cached content
       const result = await starwindDocsTool.handler({ topic: "button" });
-      expect(result.source).toBe("cache");
+      expect(result.resultType).toBe("page");
+      expect(result.documentation).toBe(first.documentation);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it("should fall back to llms.txt for unknown topics", async () => {
       const result = await starwindDocsTool.handler({ topic: "zzzznonexistent" });
 
       // Should fall back to llms.txt filtering
-      expect(result.source).toBe("fallback");
+      expect(result.resultType).toBe("filtered");
+      expect(result.note).toBeDefined();
       expect(result.url).toContain("llms.txt");
     });
   });
@@ -153,7 +195,7 @@ describe("starwindDocsTool", () => {
       const result = await starwindDocsTool.handler({});
 
       expect(result.documentation).toBeDefined();
-      expect(result.source).toBeDefined();
+      expect(result.resultType).toBeDefined();
       expect(result.url).toBeDefined();
       expect(result.topic).toBeNull();
       expect(result.full).toBe(false);

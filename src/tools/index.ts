@@ -1,72 +1,65 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  CallToolRequestSchema,
-  ErrorCode,
-  ListToolsRequestSchema,
-  McpError,
-} from "@modelcontextprotocol/sdk/types.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { ZodRawShape } from "zod";
 
-import { searchProBlocksTool } from "./search_pro_blocks_tool.js";
 import { starwindAddTool } from "./starwind_add_tool.js";
 import { starwindDocsTool } from "./starwind_docs_tool.js";
 import { starwindInitTool } from "./starwind_init_tool.js";
+import { starwindSearchTool } from "./starwind_search_tool.js";
 
 /**
- * Collection of available tools
+ * Shape shared by every tool definition registered with the MCP server.
  */
-const tools = new Map();
-
-// Register starwind_docs tool - fetches live documentation from starwind.dev
-tools.set(starwindDocsTool.name, starwindDocsTool);
-
-// Register starwind_add tool - generates validated install commands
-tools.set(starwindAddTool.name, starwindAddTool);
-
-// Register search_starwind_pro_blocks tool - searches Starwind Pro blocks
-tools.set(searchProBlocksTool.name, searchProBlocksTool);
-
-// Register starwind_init tool - dedicated project initialization
-tools.set(starwindInitTool.name, starwindInitTool);
-
-/**
- * Set up the tools for the MCP server
- * @param server - The MCP server instance
- */
-export function setupTools(server: Server): void {
-  // Register tool capabilities with the server
-  // Note: We can't modify server.capabilities directly
-  // The capabilities are set during server initialization
-
-  // Handle tool listing
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: Array.from(tools.entries()).map(([name, tool]) => ({
-      name,
-      description: (tool as any).description,
-      inputSchema: (tool as any).inputSchema,
-    })),
-  }));
-
-  // Handle tool execution
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const tool = tools.get(request.params.name);
-    if (!tool) {
-      throw new McpError(ErrorCode.MethodNotFound, `Tool '${request.params.name}' not found`);
-    }
-
-    try {
-      const result = await (tool as any).handler(request.params.arguments);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
-    } catch (error: any) {
-      throw new McpError(ErrorCode.InternalError, error.message);
-    }
-  });
+export interface ToolDefinition {
+  /** Unique tool name exposed to MCP clients. */
+  name: string;
+  /** Human-readable description shown to clients. */
+  description: string;
+  /** Zod raw shape describing the tool's input arguments. */
+  inputSchema: ZodRawShape;
+  /** Executes the tool and returns an arbitrary JSON-serializable result. */
+  handler: (args: any) => Promise<unknown>;
 }
 
-export { tools };
+/**
+ * Collection of available tools, in registration order.
+ */
+const tools: ToolDefinition[] = [
+  // Fetches live documentation from starwind.dev
+  starwindDocsTool,
+  // Generates validated install commands
+  starwindAddTool,
+  // Searches Starwind components and Pro blocks
+  starwindSearchTool,
+  // Dedicated project initialization
+  starwindInitTool,
+];
+
+/**
+ * Register all tools on the high-level MCP server using `registerTool`.
+ * @param server - The high-level `McpServer` instance.
+ */
+export function setupTools(server: McpServer): void {
+  for (const tool of tools) {
+    server.registerTool(
+      tool.name,
+      {
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      },
+      async (args) => {
+        try {
+          const result = await tool.handler(args);
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          };
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error";
+          return {
+            content: [{ type: "text" as const, text: message }],
+            isError: true,
+          };
+        }
+      },
+    );
+  }
+}

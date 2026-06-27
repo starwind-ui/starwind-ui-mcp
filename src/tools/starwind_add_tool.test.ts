@@ -1,10 +1,14 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetAddToolState, starwindAddTool } from "./starwind_add_tool";
 
 describe("starwindAddTool", () => {
   beforeEach(() => {
     resetAddToolState(); // Reset cache between tests
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   describe("tool definition", () => {
@@ -18,12 +22,10 @@ describe("starwindAddTool", () => {
     });
 
     it("should have correct input schema", () => {
-      expect(starwindAddTool.inputSchema.type).toBe("object");
-      expect(starwindAddTool.inputSchema.properties).toHaveProperty("components");
-      expect(starwindAddTool.inputSchema.properties).toHaveProperty("init");
-      expect(starwindAddTool.inputSchema.properties).toHaveProperty("cwd");
-      expect(starwindAddTool.inputSchema.properties).toHaveProperty("packageManager");
-      expect(starwindAddTool.inputSchema.required).toContain("components");
+      expect(starwindAddTool.inputSchema).toHaveProperty("components");
+      expect(starwindAddTool.inputSchema).toHaveProperty("init");
+      expect(starwindAddTool.inputSchema).toHaveProperty("cwd");
+      expect(starwindAddTool.inputSchema).toHaveProperty("packageManager");
     });
   });
 
@@ -46,6 +48,46 @@ describe("starwindAddTool", () => {
       expect(components).toContain("card");
       expect(components).toContain("dialog");
       expect(components.length).toBeGreaterThan(20); // Should have many components
+    });
+
+    it("should use refreshed fallback metadata when component docs cannot be fetched", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+
+      const result = await starwindAddTool.handler({ components: ["color-picker"] });
+
+      expect(result.success).toBe(true);
+      expect(result.componentSource).toBe("fallback");
+      expect(result.componentsToInstall).toEqual(["color-picker"]);
+
+      const components = result.availableComponents as string[];
+      expect(components).toContain("input-group");
+      expect(components).toContain("native-select");
+      expect(components).toContain("kbd");
+      expect(components).not.toContain("combobox");
+    });
+
+    it("should validate current components from compact live metadata", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          text: () =>
+            Promise.resolve(
+              "# Starwind UI - AI Reference Guide ## Installable Components and Documentation Starwind UI currently includes the following installable components: - [Button](https://starwind.dev/docs/components/button) - [Color Picker](https://starwind.dev/docs/components/color-picker) - [Input Group](https://starwind.dev/docs/components/input-group) - [Native Select](https://starwind.dev/docs/components/native-select) - [Kbd](https://starwind.dev/docs/components/kbd) ## Documented Select Patterns - Combobox: Select plus `SelectSearch` pattern documented at https://starwind.dev/docs/components/combobox. Install with `starwind add select`; there is no separate `combobox` install target.",
+            ),
+        }),
+      );
+
+      const result = await starwindAddTool.handler({ components: ["native-select"] });
+
+      expect(result.success).toBe(true);
+      expect(result.componentSource).toBe("network");
+      expect(result.componentsToInstall).toEqual(["native-select"]);
+
+      const components = result.availableComponents as string[];
+      expect(components).toContain("color-picker");
+      expect(components).toContain("input-group");
+      expect(components).not.toContain("combobox");
     });
   });
 
@@ -75,6 +117,18 @@ describe("starwindAddTool", () => {
       expect(result.command).toContain("--all");
       expect(result.command).toContain("--yes");
       expect(result.componentsToInstall).toEqual(["all"]);
+    });
+
+    it("should not fetch component metadata for --all", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await starwindAddTool.handler({ components: ["--all"] });
+
+      expect(result.success).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(result.componentSource).toBeUndefined();
+      expect(result.availableComponents).toBeUndefined();
     });
 
     it("should handle 'all' as component name", async () => {
@@ -147,6 +201,21 @@ describe("starwindAddTool", () => {
       expect(result.success).toBe(true);
       expect(result.componentsToInstall).toEqual(["button", "card"]);
     });
+
+    it("should reject unsafe component names before composing commands", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await starwindAddTool.handler({
+        components: ["@starwind-pro/hero-01;rm -rf ."],
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Invalid component name");
+      expect(result.invalidComponents).toEqual(["@starwind-pro/hero-01;rm -rf ."]);
+      expect(result.command).toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
   describe("handler - response structure", () => {
@@ -174,7 +243,10 @@ describe("starwindAddTool", () => {
       const result = await starwindAddTool.handler({ components: ["button"] });
 
       expect(result.cliFlags).toBeDefined();
-      const cliFlags = result.cliFlags as { note: string; availableFlags: Record<string, string[]> };
+      const cliFlags = result.cliFlags as {
+        note: string;
+        availableFlags: Record<string, string[]>;
+      };
       expect(cliFlags.note).toContain("--yes");
       expect(cliFlags.availableFlags.add).toBeDefined();
       expect(cliFlags.availableFlags.init).toBeDefined();
@@ -260,8 +332,41 @@ describe("starwindAddTool", () => {
       expect(result.proNote).toContain("Starwind Pro");
     });
 
+    it("should guide existing projects to run setup before adding Pro blocks", async () => {
+      const result = await starwindAddTool.handler({
+        components: ["@starwind-pro/hero-01"],
+        packageManager: "pnpm",
+      });
+
+      expect(result.command).toBe("pnpm dlx starwind@latest add @starwind-pro/hero-01 --yes");
+      expect(result.proSetup).toEqual({
+        newProjectCommand: "pnpm dlx starwind@latest init --defaults --pro",
+        existingProjectCommand: "pnpm dlx starwind@latest setup --yes --package-manager pnpm",
+        note: "For a new project, initialize with --pro. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
+      });
+      expect(result.proNote).toContain("already initialized");
+      expect(result.proNote).not.toContain("Re-run init");
+    });
+
+    it("should not fetch component metadata for Pro-only installs", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await starwindAddTool.handler({
+        components: ["@starwind-pro/hero-01"],
+        packageManager: "npm",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.command).toBe("npx starwind@latest add @starwind-pro/hero-01 --yes");
+      expect(result.componentsToInstall).toEqual(["@starwind-pro/hero-01"]);
+      expect(result.componentSource).toBeUndefined();
+      expect(result.availableComponents).toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it("should have pro in inputSchema", () => {
-      expect(starwindAddTool.inputSchema.properties).toHaveProperty("pro");
+      expect(starwindAddTool.inputSchema).toHaveProperty("pro");
     });
   });
 });

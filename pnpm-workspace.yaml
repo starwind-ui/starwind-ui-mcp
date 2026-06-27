@@ -1,0 +1,10 @@
+packages:
+  - .
+onlyBuiltDependencies:
+  - esbuild
+allowBuilds:
+  esbuild: true
+
+# 2 day minimum release age
+minimumReleaseAge: 2880
+minimumReleaseAgeStrict: true

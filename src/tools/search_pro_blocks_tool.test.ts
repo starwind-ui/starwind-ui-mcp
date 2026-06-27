@@ -18,11 +18,10 @@ describe("searchProBlocksTool", () => {
     });
 
     it("should have correct input schema", () => {
-      expect(searchProBlocksTool.inputSchema.type).toBe("object");
-      expect(searchProBlocksTool.inputSchema.properties).toHaveProperty("query");
-      expect(searchProBlocksTool.inputSchema.properties).toHaveProperty("category");
-      expect(searchProBlocksTool.inputSchema.properties).toHaveProperty("plan");
-      expect(searchProBlocksTool.inputSchema.properties).toHaveProperty("limit");
+      expect(searchProBlocksTool.inputSchema).toHaveProperty("query");
+      expect(searchProBlocksTool.inputSchema).toHaveProperty("category");
+      expect(searchProBlocksTool.inputSchema).toHaveProperty("plan");
+      expect(searchProBlocksTool.inputSchema).toHaveProperty("limit");
     });
   });
 
@@ -47,7 +46,11 @@ describe("searchProBlocksTool", () => {
       expect(Array.isArray(result.blocks)).toBe(true);
 
       // All returned blocks should match "hero" in some way
-      const blocks = result.blocks as Array<{ name: string; description: string; categories: string[] }>;
+      const blocks = result.blocks as Array<{
+        name: string;
+        description: string;
+        categories: string[];
+      }>;
       blocks.forEach((block) => {
         const matchesName = block.name.toLowerCase().includes("hero");
         const matchesDesc = block.description.toLowerCase().includes("hero");

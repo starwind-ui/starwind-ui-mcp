@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import { starwindInitTool } from "./starwind_init_tool.js";
 
 describe("starwindInitTool", () => {
@@ -7,21 +8,25 @@ describe("starwindInitTool", () => {
       expect(starwindInitTool.name).toBe("starwind_init");
     });
 
-    it("should have a description mentioning Pro default", () => {
+    it("should describe init as new-project setup with existing-project setup guidance", () => {
       expect(starwindInitTool.description).toContain("Pro");
-      expect(starwindInitTool.description).toContain("FIRST");
+      expect(starwindInitTool.description).toContain("new Starwind UI project");
+      expect(starwindInitTool.description).toContain("already initialized");
+      expect(starwindInitTool.description).toContain("starwind setup --yes");
+      expect(starwindInitTool.description).not.toContain("ALWAYS");
+      expect(starwindInitTool.description).not.toContain("FIRST");
     });
 
     it("should have correct input schema", () => {
       expect(starwindInitTool.inputSchema).toBeDefined();
-      expect(starwindInitTool.inputSchema.properties).toHaveProperty("cwd");
-      expect(starwindInitTool.inputSchema.properties).toHaveProperty("packageManager");
-      expect(starwindInitTool.inputSchema.properties).toHaveProperty("pro");
+      expect(starwindInitTool.inputSchema).toHaveProperty("cwd");
+      expect(starwindInitTool.inputSchema).toHaveProperty("packageManager");
+      expect(starwindInitTool.inputSchema).toHaveProperty("pro");
     });
 
-    it("should have pro default to true in schema", () => {
-      const proSchema = starwindInitTool.inputSchema.properties.pro as { default: boolean };
-      expect(proSchema.default).toBe(true);
+    it("should default to Pro setup when pro is omitted", async () => {
+      const result = await starwindInitTool.handler({});
+      expect(result.proEnabled).toBe(true);
     });
   });
 
@@ -56,8 +61,20 @@ describe("starwindInitTool", () => {
 
       const nextSteps = result.nextSteps as string[];
       expect(nextSteps).toContain(
-        "Or use search_starwind_pro_blocks to find Pro blocks like heroes, footers, etc.",
+        "Or use starwind_search to find components and Pro blocks like heroes, footers, etc.",
       );
+      expect(nextSteps.join("\n")).not.toContain("search_starwind_pro_blocks");
+    });
+
+    it("should distinguish new-project init from existing-project Pro setup", async () => {
+      const result = await starwindInitTool.handler({ packageManager: "pnpm" });
+
+      expect(result.command).toBe("pnpm dlx starwind@latest init --defaults --pro");
+      expect(result.proSetup).toEqual({
+        newProjectCommand: "pnpm dlx starwind@latest init --defaults --pro",
+        existingProjectCommand: "pnpm dlx starwind@latest setup --yes --package-manager pnpm",
+        note: "Use init for a new project. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
+      });
     });
   });
 
@@ -77,6 +94,20 @@ describe("starwindInitTool", () => {
 
       const nextSteps = result.nextSteps as string[];
       expect(nextSteps).toContain("Note: Pro blocks will NOT work with this setup");
+    });
+
+    it("should point standard-mode users to setup for existing projects instead of re-running init", async () => {
+      const result = await starwindInitTool.handler({ packageManager: "pnpm", pro: false });
+      const serialized = JSON.stringify(result);
+
+      expect(result.proSetup).toEqual({
+        newProjectCommand: "pnpm dlx starwind@latest init --defaults --pro",
+        existingProjectCommand: "pnpm dlx starwind@latest setup --yes --package-manager pnpm",
+        note: "To use Pro blocks later, use init --pro for a new project or setup for an already initialized Starwind UI project.",
+      });
+      expect(serialized).toContain("starwind@latest setup --yes");
+      expect(serialized).not.toContain("re-run init");
+      expect(serialized).not.toContain("Re-run init");
     });
   });
 
