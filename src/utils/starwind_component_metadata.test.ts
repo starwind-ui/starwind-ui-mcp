@@ -132,6 +132,33 @@ describe("Starwind standard component metadata", () => {
     expect(slugs).not.toContain("combobox");
   });
 
+  it("falls back when the live docs fetch times out", async () => {
+    vi.useFakeTimers();
+
+    try {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          (_url: string, init?: { signal?: AbortSignal }) =>
+            new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () => {
+                reject(new Error("aborted"));
+              });
+            }),
+        ),
+      );
+
+      const resultPromise = getStandardComponentMetadata();
+      await vi.advanceTimersByTimeAsync(5000);
+      const result = await resultPromise;
+
+      expect(result.source).toBe("fallback");
+      expect(result.components.map((component) => component.slug)).toContain("button");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("returns live metadata and then cached metadata after a successful fetch", async () => {
     vi.stubGlobal(
       "fetch",

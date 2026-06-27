@@ -66,6 +66,8 @@ interface SearchPagination {
   hasMore: boolean;
 }
 
+type ProBlockSource = "network" | "cache" | "unavailable";
+
 interface StarwindSearchResult {
   query: string | null;
   filters: {
@@ -80,13 +82,14 @@ interface StarwindSearchResult {
     results: StandardComponentResult[];
   };
   proBlocks: {
-    source: "network" | "cache";
+    source: ProBlockSource;
     totalAvailable: number;
     totalMatches: number;
     resultsReturned: number;
     availableCategories: string[];
     pagination: SearchPagination;
     results: ProBlockResult[];
+    error?: string;
   };
   proSetup?: {
     newProjectCommand: string;
@@ -267,18 +270,28 @@ export const starwindSearchTool = {
     const offset = getEffectiveOffset(args.offset);
     const isOverviewRequest = !query && !args.category && !args.plan;
 
-    const [{ components, source: componentSource }, { manifest, source: manifestSource }] =
-      await Promise.all([getStandardComponentMetadata(), getManifest()]);
+    const componentMetadataPromise = getStandardComponentMetadata();
+    const manifestPromise = getManifest()
+      .then((value) => ({ ok: true as const, ...value }))
+      .catch((error: unknown) => ({
+        ok: false as const,
+        error: error instanceof Error ? error.message : "Unknown Starwind Pro manifest error",
+      }));
+    const { components, source: componentSource } = await componentMetadataPromise;
+    const manifestResult = await manifestPromise;
 
     const standardResults = searchStandardComponents(components, query);
-    const proMatches = isOverviewRequest
-      ? []
-      : searchProBlocks(manifest.blocks, query, {
-          category: args.category,
-          plan: args.plan,
-        });
+    const proMatches =
+      !manifestResult.ok || isOverviewRequest
+        ? []
+        : searchProBlocks(manifestResult.manifest.blocks, query, {
+            category: args.category,
+            plan: args.plan,
+          });
     const pagedProMatches = proMatches.slice(offset, offset + limit);
-    const proResults = pagedProMatches.map((block) => toProBlockResult(block, manifest.baseUrl));
+    const proResults = manifestResult.ok
+      ? pagedProMatches.map((block) => toProBlockResult(block, manifestResult.manifest.baseUrl))
+      : [];
     const totalMatches = standardResults.length + proMatches.length;
 
     const result: StarwindSearchResult = {
@@ -295,17 +308,18 @@ export const starwindSearchTool = {
         results: standardResults,
       },
       proBlocks: {
-        source: manifestSource,
-        totalAvailable: manifest.totalBlocks,
+        source: manifestResult.ok ? manifestResult.source : "unavailable",
+        totalAvailable: manifestResult.ok ? manifestResult.manifest.totalBlocks : 0,
         totalMatches: proMatches.length,
         resultsReturned: proResults.length,
-        availableCategories: manifest.categories,
+        availableCategories: manifestResult.ok ? manifestResult.manifest.categories : [],
         pagination: {
           limit,
           offset,
           hasMore: offset + proResults.length < proMatches.length,
         },
         results: proResults,
+        ...(!manifestResult.ok ? { error: manifestResult.error } : {}),
       },
     };
 
@@ -313,8 +327,9 @@ export const starwindSearchTool = {
       result.message =
         "Provide a query, category, or plan to search Starwind components and Pro blocks.";
     } else if (totalMatches === 0) {
-      result.message =
-        "No Starwind components or Pro blocks found. Try a broader query or remove filters.";
+      result.message = manifestResult.ok
+        ? "No Starwind components or Pro blocks found. Try a broader query or remove filters."
+        : "No Starwind standard components found. Starwind Pro block search is temporarily unavailable.";
     }
 
     if (proResults.length > 0) {

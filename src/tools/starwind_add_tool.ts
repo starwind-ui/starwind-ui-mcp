@@ -14,6 +14,7 @@ import {
 import {
   getStandardComponentMetadata,
   resetStandardComponentMetadataCache,
+  type StandardComponentMetadataSource,
 } from "../utils/starwind_component_metadata.js";
 
 /**
@@ -37,6 +38,31 @@ export interface StarwindAddArgs {
  */
 export function resetAddToolState(): void {
   resetStandardComponentMetadataCache();
+}
+
+const STANDARD_COMPONENT_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const PRO_BLOCK_PATTERN = /^@starwind-pro\/[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function normalizeComponentName(component: string): string {
+  return component.trim().toLowerCase();
+}
+
+function isAllComponentRequest(component: string): boolean {
+  return component === "--all" || component === "all";
+}
+
+function isProBlockName(component: string): boolean {
+  return PRO_BLOCK_PATTERN.test(component);
+}
+
+function isAllowedComponentName(component: string): boolean {
+  const normalized = normalizeComponentName(component);
+
+  return (
+    isAllComponentRequest(normalized) ||
+    STANDARD_COMPONENT_PATTERN.test(normalized) ||
+    PRO_BLOCK_PATTERN.test(normalized)
+  );
 }
 
 /**
@@ -113,18 +139,27 @@ export const starwindAddTool = {
   handler: async (args: StarwindAddArgs) => {
     const { components, init = false, cwd, packageManager } = args;
 
-    // Auto-detect Pro mode if any component has @starwind-pro/ prefix
-    const hasProComponents = components.some((c) => c.toLowerCase().includes("@starwind-pro/"));
-    const isPro = args.pro === true || hasProComponents;
-
     if (!components || components.length === 0) {
       throw new Error("At least one component must be specified");
     }
 
-    // Fetch available components from llms.txt (with caching and fallback)
-    const { components: componentMetadata, source: componentSource } =
-      await getStandardComponentMetadata();
-    const availableComponents = componentMetadata.map((component) => component.slug);
+    const invalidComponentNames = components.filter(
+      (component) => !isAllowedComponentName(component),
+    );
+    if (invalidComponentNames.length > 0) {
+      return {
+        success: false,
+        error: "Invalid component name",
+        invalidComponents: invalidComponentNames,
+        hint: "Component names may only include lowercase letters, numbers, hyphens, '--all', or '@starwind-pro/<block-name>'.",
+      };
+    }
+
+    const normalizedComponents = components.map(normalizeComponentName);
+
+    // Auto-detect Pro mode if any component has a valid @starwind-pro/ prefix
+    const hasProComponents = normalizedComponents.some(isProBlockName);
+    const isPro = args.pro === true || hasProComponents;
 
     // Detect package manager (or use override)
     const pmInfo = packageManager
@@ -133,30 +168,31 @@ export const starwindAddTool = {
     const dlxCommand = getDlxCommand(pmInfo.name);
 
     // Check for --all flag
-    const installAll = components.some(
-      (c) => c.toLowerCase() === "--all" || c.toLowerCase() === "all",
-    );
+    const installAll = normalizedComponents.some(isAllComponentRequest);
 
     let addCommand: string;
     let validation: ReturnType<typeof validateComponents> | null = null;
+    let availableComponents: string[] | undefined;
+    let componentSource: StandardComponentMetadataSource | undefined;
 
     // Separate Pro blocks from standard components
-    const proBlocks = components.filter((c) => c.toLowerCase().includes("@starwind-pro/"));
-    const standardComponents = components.filter(
-      (c) => !c.toLowerCase().includes("@starwind-pro/"),
+    const proBlocks = normalizedComponents.filter(isProBlockName);
+    const standardComponents = normalizedComponents.filter(
+      (component) => !isProBlockName(component) && !isAllComponentRequest(component),
     );
 
     if (installAll) {
       addCommand = `${dlxCommand} starwind@latest add --all --yes`;
     } else if (proBlocks.length > 0 && standardComponents.length === 0) {
-      // Only Pro blocks - no validation needed, use as-is
       addCommand = `${dlxCommand} starwind@latest add ${proBlocks.join(" ")} --yes`;
     } else {
+      // Fetch available components from llms.txt only when standard validation needs it.
+      const { components: componentMetadata, source } = await getStandardComponentMetadata();
+      componentSource = source;
+      availableComponents = componentMetadata.map((component) => component.slug);
+
       // Validate standard components against fetched list
-      validation = validateComponents(
-        standardComponents.length > 0 ? standardComponents : components,
-        availableComponents,
-      );
+      validation = validateComponents(standardComponents, availableComponents);
 
       if (validation.valid.length === 0 && proBlocks.length === 0) {
         return {
@@ -180,8 +216,10 @@ export const starwindAddTool = {
       success: true,
       packageManager: pmInfo.name,
       commands: [] as string[],
-      componentSource,
     };
+    if (componentSource) {
+      response.componentSource = componentSource;
+    }
 
     // Add init command if requested
     if (init) {
@@ -223,7 +261,9 @@ export const starwindAddTool = {
       response.componentsToInstall = ["all"];
     }
 
-    response.availableComponents = availableComponents;
+    if (availableComponents) {
+      response.availableComponents = availableComponents;
+    }
     response.instructions =
       "Run the command in your project directory. Make sure you have an Astro project with Tailwind CSS v4 configured.";
     response.cliFlags = {

@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import config from "../config/settings.js";
-import { setupTools, tools } from "./index.js";
+import { setupTools } from "./index.js";
 
 /**
  * Shape of a text content entry returned in a CallToolResult.
@@ -48,7 +48,6 @@ describe("setupTools - MCP registration", () => {
       const names = listed.map((t) => t.name).sort();
 
       expect(names).toEqual(["starwind_add", "starwind_docs", "starwind_init", "starwind_search"]);
-      expect(listed).toHaveLength(tools.length);
     });
 
     it("keeps advanced CLI wrappers out of the public MCP tool surface", async () => {

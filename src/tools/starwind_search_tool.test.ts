@@ -207,6 +207,42 @@ describe("starwindSearchTool", () => {
       expect(result.totalMatches).toBe(2);
     });
 
+    it("should keep standard search results when the Pro manifest is unavailable", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: string) => {
+          if (url === "https://starwind.dev/llms.txt") {
+            return Promise.resolve({
+              ok: true,
+              text: () => Promise.resolve(LLMS_TXT),
+            });
+          }
+
+          if (url === "https://pro.starwind.dev/r/manifest.json") {
+            return Promise.reject(new Error("manifest offline"));
+          }
+
+          return Promise.reject(new Error(`Unexpected URL: ${url}`));
+        }),
+      );
+
+      const result = await starwindSearchTool.handler({ query: "button" });
+
+      expect(result.standardComponents.results.map((component) => component.slug)).toEqual([
+        "button",
+      ]);
+      expect(result.totalMatches).toBe(1);
+      expect(result.proBlocks).toMatchObject({
+        source: "unavailable",
+        totalAvailable: 0,
+        totalMatches: 0,
+        resultsReturned: 0,
+        availableCategories: [],
+        results: [],
+        error: "manifest offline",
+      });
+    });
+
     it("should filter Pro blocks by plan and category", async () => {
       mockFetch();
 

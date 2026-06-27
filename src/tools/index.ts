@@ -63,5 +63,3 @@ export function setupTools(server: McpServer): void {
     );
   }
 }
-
-export { tools };

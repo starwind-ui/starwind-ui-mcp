@@ -15,6 +15,7 @@ interface ComponentMetadataCache {
 const DOCS_BASE_URL = "https://starwind.dev/docs/components";
 const LLMS_TXT_URL = "https://starwind.dev/llms.txt";
 const CACHE_TTL_MS = 60 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 5000;
 
 const FALLBACK_STANDARD_COMPONENTS: Array<{ slug: string; name: string }> = [
   { slug: "accordion", name: "Accordion" },
@@ -121,6 +122,17 @@ export function parseStandardComponentMetadata(content: string): StandardCompone
   return components;
 }
 
+async function fetchWithTimeout(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function getStandardComponentMetadata(): Promise<{
   components: StandardComponentMetadata[];
   source: StandardComponentMetadataSource;
@@ -130,7 +142,7 @@ export async function getStandardComponentMetadata(): Promise<{
   }
 
   try {
-    const response = await fetch(LLMS_TXT_URL);
+    const response = await fetchWithTimeout(LLMS_TXT_URL);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }

@@ -119,6 +119,18 @@ describe("starwindAddTool", () => {
       expect(result.componentsToInstall).toEqual(["all"]);
     });
 
+    it("should not fetch component metadata for --all", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await starwindAddTool.handler({ components: ["--all"] });
+
+      expect(result.success).toBe(true);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(result.componentSource).toBeUndefined();
+      expect(result.availableComponents).toBeUndefined();
+    });
+
     it("should handle 'all' as component name", async () => {
       const result = await starwindAddTool.handler({ components: ["all"] });
 
@@ -188,6 +200,21 @@ describe("starwindAddTool", () => {
 
       expect(result.success).toBe(true);
       expect(result.componentsToInstall).toEqual(["button", "card"]);
+    });
+
+    it("should reject unsafe component names before composing commands", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await starwindAddTool.handler({
+        components: ["@starwind-pro/hero-01;rm -rf ."],
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("Invalid component name");
+      expect(result.invalidComponents).toEqual(["@starwind-pro/hero-01;rm -rf ."]);
+      expect(result.command).toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 
@@ -319,6 +346,23 @@ describe("starwindAddTool", () => {
       });
       expect(result.proNote).toContain("already initialized");
       expect(result.proNote).not.toContain("Re-run init");
+    });
+
+    it("should not fetch component metadata for Pro-only installs", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await starwindAddTool.handler({
+        components: ["@starwind-pro/hero-01"],
+        packageManager: "npm",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.command).toBe("npx starwind@latest add @starwind-pro/hero-01 --yes");
+      expect(result.componentsToInstall).toEqual(["@starwind-pro/hero-01"]);
+      expect(result.componentSource).toBeUndefined();
+      expect(result.availableComponents).toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it("should have pro in inputSchema", () => {

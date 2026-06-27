@@ -1,10 +1,14 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetDocsToolState, starwindDocsTool } from "./starwind_docs_tool";
 
 describe("starwindDocsTool", () => {
   beforeEach(() => {
     resetDocsToolState(); // Reset cache between tests
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   describe("tool definition", () => {
@@ -56,23 +60,39 @@ describe("starwindDocsTool", () => {
 
   describe("handler - caching", () => {
     it("should cache results and return from cache on second call", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve("# Starwind\n\nButton docs"),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
       // First call
       const result1 = await starwindDocsTool.handler({});
+      expect(fetchMock).toHaveBeenCalledTimes(1);
 
       // Second call - should return identical cached content
       const result2 = await starwindDocsTool.handler({});
       expect(result2.documentation).toBe(result1.documentation);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it("should include cache info in cached response", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve("# Starwind\n\nButton docs"),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
       // First call to populate cache
       await starwindDocsTool.handler({});
+      expect(fetchMock).toHaveBeenCalledTimes(1);
 
       // Second call - from cache
       const result = await starwindDocsTool.handler({});
       expect(result.cacheInfo).toBeDefined();
       expect(result.cacheInfo?.age).toBeDefined();
       expect(result.cacheInfo?.remainingTtl).toBeDefined();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -110,6 +130,22 @@ describe("starwindDocsTool", () => {
       expect(result.pageType).toBe("guide");
     });
 
+    it("should mark fallback component pages as components when the page fetch succeeds", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          text: () => Promise.resolve("# Color Picker\n\nComponent docs"),
+        }),
+      );
+
+      const result = await starwindDocsTool.handler({ topic: "color-picker" });
+
+      expect(result.resultType).toBe("page");
+      expect(result.url).toBe("https://starwind.dev/docs/components/color-picker.md");
+      expect(result.pageType).toBe("component");
+    });
+
     it("should handle theming topic", async () => {
       const result = await starwindDocsTool.handler({ topic: "theming" });
 
@@ -119,13 +155,21 @@ describe("starwindDocsTool", () => {
     });
 
     it("should cache specific page results", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve("# Button\n\nButton docs"),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
       // First call
       const first = await starwindDocsTool.handler({ topic: "button" });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
 
       // Second call - should return identical cached content
       const result = await starwindDocsTool.handler({ topic: "button" });
       expect(result.resultType).toBe("page");
       expect(result.documentation).toBe(first.documentation);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it("should fall back to llms.txt for unknown topics", async () => {

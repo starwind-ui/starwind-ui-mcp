@@ -234,6 +234,10 @@ function getMarkdownUrl(topic: string): string | null {
   return `${DOCS_URLS.base}/docs/components/${normalized}.md`;
 }
 
+function getPageTypeFromUrl(url: string): "component" | "guide" {
+  return url.startsWith(`${DOCS_URLS.base}/docs/components/`) ? "component" : "guide";
+}
+
 /**
  * Fetch a specific documentation page
  */
@@ -307,7 +311,7 @@ export const starwindDocsTool = {
               url: markdownUrl,
               topic: args.topic,
               full: true, // Specific pages are always full
-              pageType: KNOWN_COMPONENTS.includes(topic) ? "component" : "guide",
+              pageType: getPageTypeFromUrl(markdownUrl),
               cacheInfo: cacheInfo
                 ? {
                     age: `${cacheInfo.age} seconds`,
@@ -331,7 +335,7 @@ export const starwindDocsTool = {
             url: markdownUrl,
             topic: args.topic,
             full: true,
-            pageType: KNOWN_COMPONENTS.includes(topic) ? "component" : "guide",
+            pageType: getPageTypeFromUrl(markdownUrl),
             cacheInfo: cacheInfo
               ? {
                   age: `${cacheInfo.age} seconds`,
