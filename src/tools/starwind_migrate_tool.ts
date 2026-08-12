@@ -35,40 +35,49 @@ export const starwindMigrateTool = {
     const flags = args.yes ? ` --yes --package-manager ${pmInfo.name}` : "";
     const applicable = project.configVersion === 1;
     // Interactive migration lets the CLI auto-detect; non-interactive mode pins the detected manager.
+    const applicabilityWarnings = project.configVersionInvalid
+      ? ["The Starwind config has an invalid version; verify it before attempting migration."]
+      : project.configVersion === null
+        ? ["No Starwind config was detected; initialize a new v3 project instead of migrating."]
+        : project.configVersion === 2
+          ? ["This project already has a v2 Runtime config and does not need the legacy migration."]
+          : project.configVersion !== 1
+            ? [
+                `Starwind config version ${project.configVersion} is not a supported legacy version.`,
+              ]
+            : [];
+    const migrationWarnings = applicable
+      ? [
+          "Confirm the Git working tree is clean and recoverable before migrating.",
+          "Run the project's build, typecheck, and tests before and after migration.",
+          "Keep the generated starwind-legacy backup until browser verification passes.",
+          ...(args.yes
+            ? [
+                "--yes creates the component backup and overwrites registered conflicts without prompting.",
+              ]
+            : []),
+        ]
+      : [];
 
     return {
       success: applicable,
       ...(applicable
         ? { command: `${getDlxCommand(pmInfo.name)} starwind@latest migrate${flags}` }
         : {}),
-      interactive: args.yes !== true,
+      interactive: applicable && args.yes !== true,
       packageManager: pmInfo.name,
       packageManagerSource: pmInfo.source,
       project,
       applicable,
-      warnings: [
-        "Confirm the Git working tree is clean and recoverable before migrating.",
-        "Run the project's build, typecheck, and tests before and after migration.",
-        "Keep the generated starwind-legacy backup until browser verification passes.",
-        ...(project.configVersion === null
-          ? ["No Starwind config was detected; initialize a new v3 project instead of migrating."]
-          : project.configVersion === 2
-            ? [
-                "This project already has a v2 Runtime config and does not need the legacy migration.",
-              ]
-            : []),
-        ...(args.yes
-          ? [
-              "--yes creates the component backup and overwrites registered conflicts without prompting.",
-            ]
-          : []),
-      ],
-      reviewAfterMigration: [
-        "Review migrated, skipped, custom, legacy, and rename-codemod outcomes.",
-        "Inspect every config entry that remains source: legacy.",
-        "Audit legacy events, props, imports, helpers, selectors, and component customizations.",
-        "Verify theme, forms, overlays, events, navigation, and responsive behavior in a browser.",
-      ],
+      warnings: [...migrationWarnings, ...applicabilityWarnings],
+      reviewAfterMigration: applicable
+        ? [
+            "Review migrated, skipped, custom, legacy, and rename-codemod outcomes.",
+            "Inspect every config entry that remains source: legacy.",
+            "Audit legacy events, props, imports, helpers, selectors, and component customizations.",
+            "Verify theme, forms, overlays, events, navigation, and responsive behavior in a browser.",
+          ]
+        : [],
       documentation: {
         guide: "https://starwind.dev/docs/getting-started/migration/",
         blog: "https://starwind.dev/blog/migrating-to-starwind-ui-v3/",

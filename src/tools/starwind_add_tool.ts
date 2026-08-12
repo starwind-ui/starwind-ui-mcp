@@ -237,7 +237,7 @@ export const starwindAddTool = {
     const names = installAll ? [] : [...new Set([...valid, ...expandedProItems])];
     const namespace = surface === "primitive" ? " primitives" : "";
     const flags = [installAll ? "--all" : names.join(" "), "--yes"];
-    if (args.framework) flags.push("--framework", args.framework);
+    if (effectiveFramework) flags.push("--framework", effectiveFramework);
     if (surface === "primitive" && args.to) flags.push("--to", args.to);
     if (args.overwrite) flags.push("--overwrite");
     flags.push("--package-manager", pmInfo.name);

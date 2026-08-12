@@ -50,6 +50,7 @@ describe("inspectStarwindProject", () => {
       expect(context.packageJsonFound).toBe(false);
       expect(context.starwindConfigFound).toBe(false);
       expect(context.configVersion).toBeNull();
+      expect(context.configVersionInvalid).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

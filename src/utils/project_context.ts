@@ -8,6 +8,7 @@ export interface StarwindProjectContext {
   detectedFramework: "astro" | "react" | null;
   starwindConfigFound: boolean;
   configVersion: number | null;
+  configVersionInvalid: boolean;
   configuredFramework: "astro" | "react" | null;
   componentDir: string | null;
   installedComponentCount: number | null;
@@ -70,6 +71,10 @@ export function inspectStarwindProject(cwd = process.cwd()): StarwindProjectCont
   const configuredFramework =
     config?.framework === "astro" || config?.framework === "react" ? config.framework : null;
   const components = config?.components;
+  const hasConfigVersion = config !== null && "version" in config;
+  const configVersionInvalid = hasConfigVersion && typeof config.version !== "number";
+  const configVersion =
+    typeof config?.version === "number" ? config.version : config && !hasConfigVersion ? 1 : null;
 
   return {
     cwd,
@@ -77,7 +82,8 @@ export function inspectStarwindProject(cwd = process.cwd()): StarwindProjectCont
     packageJsonFound: packageJson !== null,
     detectedFramework,
     starwindConfigFound: config !== null,
-    configVersion: typeof config?.version === "number" ? config.version : config ? 1 : null,
+    configVersion,
+    configVersionInvalid,
     configuredFramework,
     componentDir: typeof config?.componentDir === "string" ? config.componentDir : null,
     installedComponentCount: Array.isArray(components) ? components.length : null,

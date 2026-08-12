@@ -33,6 +33,9 @@ describe("starwindMigrateTool", () => {
     expect(result.applicable).toBe(false);
     expect(result.success).toBe(false);
     expect(result.command).toBeUndefined();
+    expect(result.interactive).toBe(false);
+    expect(result.reviewAfterMigration).toEqual([]);
+    expect(result.warnings).not.toEqual(expect.arrayContaining([expect.stringContaining("Git")]));
     expect(result.warnings).toEqual(
       expect.arrayContaining([expect.stringContaining("No Starwind config")]),
     );
@@ -44,10 +47,26 @@ describe("starwindMigrateTool", () => {
       JSON.stringify({ version: 2, framework: "astro", components: [] }),
     );
     const result = await starwindMigrateTool.handler({ cwd, packageManager: "pnpm" });
-    expect(result).toMatchObject({ success: false, applicable: false });
+    expect(result).toMatchObject({ success: false, applicable: false, interactive: false });
     expect(result.command).toBeUndefined();
+    expect(result.reviewAfterMigration).toEqual([]);
+    expect(result.warnings).not.toEqual(expect.arrayContaining([expect.stringContaining("Git")]));
     expect(result.warnings).toEqual(
       expect.arrayContaining([expect.stringContaining("v2 Runtime config")]),
+    );
+  });
+
+  it("fails closed for a malformed config version", async () => {
+    writeFileSync(
+      join(cwd, "starwind.config.json"),
+      JSON.stringify({ version: "2", framework: "astro", components: [] }),
+    );
+    const result = await starwindMigrateTool.handler({ cwd, packageManager: "npm" });
+    expect(result).toMatchObject({ success: false, applicable: false, interactive: false });
+    expect(result.command).toBeUndefined();
+    expect(result.project).toMatchObject({ configVersion: null, configVersionInvalid: true });
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining("invalid version")]),
     );
   });
 

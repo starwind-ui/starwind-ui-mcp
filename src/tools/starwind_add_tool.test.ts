@@ -125,11 +125,32 @@ describe("starwindAddTool", () => {
       });
       expect(componentResult.success).toBe(false);
       expect(componentResult.invalidComponents).toEqual(["image"]);
+
+      const configuredResult = await starwindAddTool.handler({
+        components: ["button"],
+        cwd,
+        packageManager: "npm",
+      });
+      expect(configuredResult.command).toContain("--framework react");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
+  it("passes a detected framework to the generated add command", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-detected-add-"));
+    try {
+      writeFileSync(join(cwd, "package.json"), JSON.stringify({ dependencies: { astro: "^6" } }));
+      const result = await starwindAddTool.handler({
+        components: ["button"],
+        cwd,
+        packageManager: "pnpm",
+      });
+      expect(result.command).toContain("--framework astro");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
   it("does not configure paid authorization for a free Pro block", async () => {
     const result = await starwindAddTool.handler({
       components: ["@starwind-pro/hero-01"],
