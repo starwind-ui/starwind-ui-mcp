@@ -1,114 +1,119 @@
 import { z } from "zod";
 
 import { detectPackageManager, type PackageManager } from "../utils/package_manager.js";
-import {
-  getDlxCommand,
-  getExistingProjectProSetupCommand,
-  getProInitCommand,
-} from "../utils/starwind_commands.js";
+import { inspectStarwindProject } from "../utils/project_context.js";
+import { getDlxCommand, getInitCommand } from "../utils/starwind_commands.js";
+import type { StarwindFramework } from "../utils/starwind_manifest.js";
+import { getProDiscovery, getProUpgrade } from "../utils/starwind_pro_guidance.js";
 
-/**
- * Arguments for the starwind_init tool
- */
 interface StarwindInitArgs {
   cwd?: string;
-  packageManager?: "npm" | "pnpm" | "yarn";
+  packageManager?: PackageManager;
+  framework?: StarwindFramework;
   pro?: boolean;
 }
 
-/**
- * Starwind Init tool - dedicated tool for initializing Starwind UI projects
- *
- * Defaults to Pro setup since it doesn't break anything and enables Pro blocks.
- */
+function nodeMeetsV3Requirement(version: string): boolean {
+  const [major, minor] = version.split(".").map(Number);
+  return major > 22 || (major === 22 && minor >= 12);
+}
+
 export const starwindInitTool = {
   name: "starwind_init",
   description:
-    "Initializes a new Starwind UI project. Defaults to Pro setup, which enables standard components and Pro blocks for new projects. For an already initialized Starwind UI project that needs Pro support, use starwind setup --yes instead of reinitializing.",
+    "Generates a Starwind UI v3 initialization command for an existing Astro or React project. The CLI auto-detects the framework unless an override is provided. Paid Pro authorization is opt-in and currently targets Astro.",
   inputSchema: {
     cwd: z
       .string()
       .optional()
-      .describe("Working directory for package manager detection. Defaults to current directory."),
-    packageManager: z
-      .enum(["npm", "pnpm", "yarn"])
-      .optional()
-      .describe(
-        "Override the auto-detected package manager. Use this if package manager detection fails or you want to force a specific one.",
-      ),
+      .describe("Project directory used for package manager and framework detection."),
+    packageManager: z.enum(["npm", "pnpm", "yarn"]).optional(),
+    framework: z.enum(["astro", "react"]).optional().describe("Optional CLI framework override."),
     pro: z
       .boolean()
       .optional()
-      .describe(
-        "Whether to initialize with Starwind Pro support. Defaults to TRUE. Pro setup enables both standard components AND Pro blocks. Only set to false if you specifically want standard-only setup.",
-      ),
+      .describe("Configure paid Starwind Pro authorization. Defaults to false."),
+  },
+  outputSchema: {
+    result: z.record(z.unknown()).describe("Structured Starwind initialization result."),
   },
 
-  /**
-   * Handler for the starwind_init tool
-   */
-  async handler(args: StarwindInitArgs): Promise<Record<string, unknown>> {
-    // Default to Pro setup
-    const isPro = args.pro !== false;
-
-    // Detect or use provided package manager
+  async handler(args: StarwindInitArgs = {}): Promise<Record<string, unknown>> {
+    const cwd = args.cwd ?? process.cwd();
+    const project = inspectStarwindProject(cwd);
     const pmInfo = args.packageManager
-      ? { name: args.packageManager as PackageManager, source: "user-specified" as const }
-      : detectPackageManager({ cwd: args.cwd });
-
+      ? { name: args.packageManager, source: "user-specified" as const }
+      : { ...detectPackageManager({ cwd }), source: "detected" as const };
     const dlxCommand = getDlxCommand(pmInfo.name);
+    const isPro = args.pro === true;
+    const effectiveFramework =
+      args.framework ?? project.configuredFramework ?? project.detectedFramework;
+    if (isPro && effectiveFramework === "react") {
+      return {
+        success: false,
+        error:
+          "Paid Starwind Pro blocks currently target Astro; initialize React without pro: true.",
+        framework: effectiveFramework,
+        project,
+      };
+    }
 
-    // Build init command
-    const initCommand = isPro
-      ? getProInitCommand(dlxCommand)
-      : `${dlxCommand} starwind@latest init --defaults`;
+    const command = getInitCommand(dlxCommand, { framework: args.framework, pro: isPro });
+    const warnings: string[] = [];
+    if (!nodeMeetsV3Requirement(project.nodeVersion)) {
+      warnings.push(`Starwind UI v3 requires Node.js >=22.12.0; detected ${project.nodeVersion}.`);
+    }
+    if (!project.packageJsonFound)
+      warnings.push("Run this from an existing Astro or React project root.");
+    if (project.configVersion === 1) {
+      warnings.push("A legacy Starwind config was detected. Use starwind_migrate instead of init.");
+    }
 
+    const hasConfiguredFramework = !args.framework && project.configuredFramework;
     return {
       success: true,
-      command: initCommand,
+      command,
       packageManager: pmInfo.name,
-      packageManagerSource: "source" in pmInfo ? pmInfo.source : "detected",
+      packageManagerSource: pmInfo.source,
+      framework: effectiveFramework,
+      frameworkSource: args.framework
+        ? "user-specified"
+        : hasConfiguredFramework
+          ? "starwind-config"
+          : project.detectedFramework
+            ? "detected"
+            : "cli-auto-detect",
       proEnabled: isPro,
-      setupType: isPro ? "Starwind Pro" : "Starwind Standard",
-      description: isPro
-        ? "This command initializes Starwind UI with Pro support. You can use both standard components (button, card, etc.) AND Pro blocks (@starwind-pro/hero-01, etc.)."
-        : "This command initializes Starwind UI standard. You can only use standard components from this new-project setup. To use Pro blocks later, use init --pro for a new project or setup for an already initialized Starwind UI project.",
-      nextSteps: isPro
-        ? [
-            "Run the command above in your project directory",
-            "Then use starwind_add to add components: e.g., button, card, dialog",
-            "Or use starwind_search to find components and Pro blocks like heroes, footers, etc.",
-          ]
-        : [
-            "Run the command above in your project directory",
-            "Then use starwind_add to add components: e.g., button, card, dialog",
-            "Note: Pro blocks will NOT work with this setup",
-          ],
+      setupType: isPro ? "Starwind UI with paid Pro authorization" : "Starwind UI",
+      project,
       requirements: {
-        framework: "Astro",
-        styling: "Tailwind CSS v4",
-        note: "Make sure your project has Astro and Tailwind CSS v4 configured before running init.",
+        node: ">=22.12.0",
+        framework: "Existing Astro >=5 or React >=18 project",
+        styling: "Tailwind CSS v4 (configured by Starwind init)",
       },
+      warnings,
+      nextSteps: [
+        "Run the command in the project root.",
+        "Use starwind_search to discover styled components, primitives, and Pro blocks.",
+        "Use starwind_add to generate the matching install command.",
+      ],
       cliFlags: {
-        "--defaults": "Accepts all default configuration options (required for AI execution)",
-        "--pro": "Enables Starwind Pro support for premium blocks",
-        "--yes": "Skips confirmation prompts (used by add command, not init)",
+        "--defaults": "Accept default configuration values after project detection.",
+        "--framework": "Override framework detection with astro or react.",
+        "--pro": "Configure paid Starwind Pro authorization for Astro blocks.",
       },
-      ...(isPro
-        ? {
-            proSetup: {
-              newProjectCommand: getProInitCommand(dlxCommand),
-              existingProjectCommand: getExistingProjectProSetupCommand(dlxCommand, pmInfo.name),
-              note: "Use init for a new project. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
-            },
-          }
-        : {
-            proSetup: {
-              newProjectCommand: getProInitCommand(dlxCommand),
-              existingProjectCommand: getExistingProjectProSetupCommand(dlxCommand, pmInfo.name),
-              note: "To use Pro blocks later, use init --pro for a new project or setup for an already initialized Starwind UI project.",
-            },
-          }),
+      ...(effectiveFramework !== "react"
+        ? isPro
+          ? {
+              proUpgrade: getProUpgrade({
+                dlxCommand,
+                reason: "Paid Starwind Pro authorization was requested for this Astro project.",
+                configured: project.proRegistryConfigured,
+                setupCommand: command,
+              }),
+            }
+          : { proDiscovery: getProDiscovery(dlxCommand) }
+        : {}),
     };
   },
 };

@@ -1,464 +1,274 @@
-/**
- * Starwind Docs Tool
- * Fetches live documentation from starwind.dev for AI consumption
- */
-
 import { z } from "zod";
 
-/**
- * Interface for starwind docs tool arguments
- */
+import {
+  getStarwindManifest,
+  resetStarwindManifestCache,
+  type StarwindMetadataSource,
+} from "../utils/starwind_manifest.js";
+
 export interface StarwindDocsArgs {
-  /** Optional topic to filter documentation (e.g., "button", "theming", "installation") */
   topic?: string;
-  /** Whether to fetch the full documentation (defaults to false for concise version) */
+  surface?: "auto" | "component" | "primitive" | "guide" | "runtime";
   full?: boolean;
 }
 
-/**
- * Result returned by the Starwind docs tool handler.
- */
 export interface StarwindDocsResult {
-  /** The documentation content (markdown). */
   documentation: string;
-  /** Kind of result: an exact dedicated page, filtered excerpts, or the full aggregate docs. */
   resultType: "page" | "filtered" | "full";
-  /** The source URL the documentation was derived from. */
   url: string;
-  /** The requested topic, or null when none was provided. */
   topic: string | null;
-  /** Whether full documentation was returned. */
+  surface: StarwindDocsArgs["surface"];
   full: boolean;
-  /** For dedicated pages, whether the topic is a component or a guide. */
-  pageType?: "component" | "guide";
-  /** Present only on degraded ("filtered") results to caveat completeness. */
+  pageType?: "component" | "primitive" | "guide" | "runtime";
+  metadataSource?: StarwindMetadataSource;
   note?: string;
-  /** Cache metadata, or null when not served from cache. */
   cacheInfo: { age: string; remainingTtl: string } | null;
-  /** Rate limit telemetry. */
   rateLimitInfo: { requestsRemaining: number; resetAfter: string };
 }
 
-/**
- * Cache entry structure
- */
 interface CacheEntry {
   data: string;
   timestamp: number;
   expiresAt: number;
 }
 
-/**
- * Simple in-memory cache for documentation
- */
 class DocsCache {
-  private cache: Map<string, CacheEntry> = new Map();
+  private cache = new Map<string, CacheEntry>();
 
   get(key: string): string | undefined {
     const entry = this.cache.get(key);
-    if (!entry) return undefined;
-    if (Date.now() > entry.expiresAt) {
-      this.cache.delete(key);
+    if (!entry || Date.now() > entry.expiresAt) {
+      if (entry) this.cache.delete(key);
       return undefined;
     }
     return entry.data;
   }
 
   set(key: string, data: string, ttlSeconds: number): void {
-    const now = Date.now();
-    this.cache.set(key, {
-      data,
-      timestamp: now,
-      expiresAt: now + ttlSeconds * 1000,
-    });
+    const timestamp = Date.now();
+    this.cache.set(key, { data, timestamp, expiresAt: timestamp + ttlSeconds * 1000 });
   }
 
-  getInfo(key: string): { age: number; remainingTtl: number } | undefined {
+  info(key: string): { age: string; remainingTtl: string } | null {
     const entry = this.cache.get(key);
-    if (!entry) return undefined;
-    const now = Date.now();
+    if (!entry) return null;
     return {
-      age: Math.floor((now - entry.timestamp) / 1000),
-      remainingTtl: Math.max(0, Math.floor((entry.expiresAt - now) / 1000)),
+      age: `${Math.floor((Date.now() - entry.timestamp) / 1000)} seconds`,
+      remainingTtl: `${Math.max(0, Math.floor((entry.expiresAt - Date.now()) / 1000))} seconds`,
     };
   }
 }
 
-/**
- * Rate limiter to prevent excessive requests
- */
 class RateLimiter {
-  private lastCallTimes: number[] = [];
-  private maxCallsPerMinute: number;
+  private calls: number[] = [];
+  constructor(private readonly maxCalls = 10) {}
 
-  constructor(maxCallsPerMinute: number = 3) {
-    this.maxCallsPerMinute = maxCallsPerMinute;
+  private prune(): void {
+    this.calls = this.calls.filter((time) => time > Date.now() - 60_000);
   }
 
-  canMakeCall(): boolean {
-    const now = Date.now();
-    const oneMinuteAgo = now - 60 * 1000;
-    this.lastCallTimes = this.lastCallTimes.filter((time) => time > oneMinuteAgo);
-    return this.lastCallTimes.length < this.maxCallsPerMinute;
+  record(): void {
+    this.prune();
+    if (this.calls.length >= this.maxCalls) {
+      throw new Error(`Rate limit exceeded. Try again in ${this.resetSeconds()} seconds.`);
+    }
+    this.calls.push(Date.now());
   }
 
-  recordCall(): void {
-    this.lastCallTimes.push(Date.now());
+  remaining(): number {
+    this.prune();
+    return this.maxCalls - this.calls.length;
   }
 
-  getRemainingCalls(): number {
-    const now = Date.now();
-    const oneMinuteAgo = now - 60 * 1000;
-    this.lastCallTimes = this.lastCallTimes.filter((time) => time > oneMinuteAgo);
-    return Math.max(0, this.maxCallsPerMinute - this.lastCallTimes.length);
-  }
-
-  getResetTimeSeconds(): number {
-    if (this.lastCallTimes.length === 0) return 0;
-    const oldest = Math.min(...this.lastCallTimes);
-    return Math.max(0, Math.ceil(60 - (Date.now() - oldest) / 1000));
+  resetSeconds(): number {
+    this.prune();
+    return this.calls.length ? Math.max(0, Math.ceil(60 - (Date.now() - this.calls[0]) / 1000)) : 0;
   }
 }
 
-// Cache TTL values in seconds
-const CACHE_TTL = {
-  STANDARD: 60 * 60, // 1 hour
-  FULL: 60 * 60 * 3, // 3 hours
-  PAGE: 60 * 60 * 2, // 2 hours for specific pages
+const DOCS_URLS = {
+  concise: "https://starwind.dev/llms.txt",
+  full: "https://starwind.dev/llms-full.txt",
+  runtimeMarkdown: "https://starwind.dev/docs/runtime.md",
 };
-
-// Singleton instances
+const GUIDE_ALIASES: Record<string, string> = {
+  introduction: "getting-started",
+  about: "getting-started",
+  darkmode: "dark-mode",
+  react: "vite-react",
+  vite: "vite-react",
+  next: "nextjs",
+  "next.js": "nextjs",
+  tanstack: "tanstack-start",
+};
+const FETCH_TIMEOUT_MS = 5000;
 let docsCache = new DocsCache();
-let rateLimiter = new RateLimiter(10); // Increased for page fetches
+let rateLimiter = new RateLimiter();
 
-/**
- * Reset cache and rate limiter state (for testing purposes)
- */
 export function resetDocsToolState(): void {
   docsCache = new DocsCache();
-  rateLimiter = new RateLimiter(10);
+  rateLimiter = new RateLimiter();
+  resetStarwindManifestCache();
 }
 
-// Documentation URLs
-const DOCS_URLS = {
-  standard: "https://starwind.dev/llms.txt",
-  full: "https://starwind.dev/llms-full.txt",
-  base: "https://starwind.dev",
-};
-
-// Known components (fetched from llms.txt dynamically, with fallback)
-const KNOWN_COMPONENTS = [
-  "accordion",
-  "alert",
-  "alert-dialog",
-  "aspect-ratio",
-  "avatar",
-  "badge",
-  "breadcrumb",
-  "button",
-  "button-group",
-  "card",
-  "carousel",
-  "checkbox",
-  "collapsible",
-  "color-picker",
-  "context-menu",
-  "dialog",
-  "dropdown",
-  "dropzone",
-  "hover-card",
-  "image",
-  "input",
-  "input-group",
-  "input-otp",
-  "item",
-  "kbd",
-  "label",
-  "native-select",
-  "pagination",
-  "popover",
-  "progress",
-  "prose",
-  "radio-group",
-  "scroll-area",
-  "select",
-  "separator",
-  "sheet",
-  "sidebar",
-  "skeleton",
-  "slider",
-  "spinner",
-  "switch",
-  "table",
-  "tabs",
-  "textarea",
-  "theme-toggle",
-  "toast",
-  "toggle",
-  "tooltip",
-  "video",
-];
-
-// Known doc pages that aren't components
-const DOC_PAGE_PATHS: Record<string, string> = {
-  installation: "/docs/getting-started/installation",
-  "getting-started": "/docs/getting-started/installation",
-  theming: "/docs/getting-started/theming",
-  themes: "/docs/getting-started/themes",
-  "dark-mode": "/docs/getting-started/dark-mode",
-  darkmode: "/docs/getting-started/dark-mode",
-  typography: "/docs/getting-started/typography",
-  cli: "/docs/getting-started/cli",
-  about: "/docs/getting-started",
-  introduction: "/docs/getting-started",
-  ai: "/docs/getting-started/ai",
-  "ai-integration": "/docs/getting-started/ai",
-  skills: "/docs/getting-started/skills",
-  mcp: "/docs/getting-started/mcp",
-};
-
-/**
- * Build the markdown URL for a topic
- */
-function getMarkdownUrl(topic: string): string | null {
-  const normalized = topic.toLowerCase().trim();
-
-  // Check if it's a known doc page
-  if (DOC_PAGE_PATHS[normalized]) {
-    return `${DOCS_URLS.base}${DOC_PAGE_PATHS[normalized]}.md`;
-  }
-
-  // Check if it's a known component
-  if (KNOWN_COMPONENTS.includes(normalized)) {
-    return `${DOCS_URLS.base}/docs/components/${normalized}.md`;
-  }
-
-  // Try as a component anyway (might be a new component not in our list)
-  return `${DOCS_URLS.base}/docs/components/${normalized}.md`;
-}
-
-function getPageTypeFromUrl(url: string): "component" | "guide" {
-  return url.startsWith(`${DOCS_URLS.base}/docs/components/`) ? "component" : "guide";
-}
-
-/**
- * Fetch a specific documentation page
- */
-async function fetchDocPage(url: string): Promise<string | null> {
+async function fetchText(url: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      return null;
-    }
-    return await response.text();
+    rateLimiter.record();
+    const response = await fetch(url, { signal: controller.signal });
+    return response.ok ? await response.text() : null;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
-/**
- * Starwind Docs tool definition
- */
+function normalizedSlug(url: string): string {
+  return url.replace(/\/$/, "").split("/").pop()?.toLowerCase() ?? "";
+}
+
+async function resolvePage(topic: string, surface: NonNullable<StarwindDocsArgs["surface"]>) {
+  const normalized = topic.toLowerCase().trim();
+  const alias = GUIDE_ALIASES[normalized] ?? normalized;
+  const { manifest, source } = await getStarwindManifest();
+  const component = manifest.components.find((item) =>
+    [item.name, item.title, ...item.aliases].some((value) => value.toLowerCase() === normalized),
+  );
+  const primitive = manifest.layeredDocs.primitives.find((item) =>
+    [item.id, item.title, item.label, ...item.aliases].some(
+      (value) => value.toLowerCase() === normalized,
+    ),
+  );
+  const guide = manifest.guides.find(
+    (item) =>
+      item.name.toLowerCase() === alias ||
+      item.title.toLowerCase() === normalized ||
+      normalizedSlug(item.docsUrl) === alias,
+  );
+
+  if (surface === "runtime" || (surface === "auto" && normalized === "runtime")) {
+    return { url: DOCS_URLS.runtimeMarkdown, pageType: "runtime" as const, source };
+  }
+  if ((surface === "component" || surface === "auto") && component) {
+    return { url: component.markdownUrl, pageType: "component" as const, source };
+  }
+  if ((surface === "primitive" || surface === "auto") && primitive) {
+    return { url: primitive.markdownUrl, pageType: "primitive" as const, source };
+  }
+  if ((surface === "guide" || surface === "auto") && guide) {
+    return { url: guide.markdownUrl, pageType: "guide" as const, source };
+  }
+  if (surface === "component") {
+    return {
+      url: `https://starwind.dev/docs/components/${normalized}.md`,
+      pageType: "component" as const,
+      source,
+    };
+  }
+  if (surface === "primitive") {
+    return {
+      url: `https://starwind.dev/docs/primitives/${normalized}.md`,
+      pageType: "primitive" as const,
+      source,
+    };
+  }
+  return null;
+}
+
+function filterAggregate(content: string, topic: string): string {
+  const lines = content.split("\n");
+  const matches: string[] = [];
+  let collecting = false;
+  let depth = 0;
+  for (const line of lines) {
+    const heading = line.match(/^(#{1,4})\s+(.+)/);
+    if (heading) {
+      const level = heading[1].length;
+      if (collecting && level <= depth) collecting = false;
+      if (heading[2].toLowerCase().includes(topic)) {
+        collecting = true;
+        depth = level;
+      }
+    }
+    if (collecting || line.toLowerCase().includes(topic)) matches.push(line);
+  }
+  return matches.join("\n").trim();
+}
+
+function telemetry() {
+  return {
+    requestsRemaining: rateLimiter.remaining(),
+    resetAfter: `${rateLimiter.resetSeconds()} seconds`,
+  };
+}
+
 export const starwindDocsTool = {
   name: "starwind_docs",
   description:
-    "Fetches live Starwind UI documentation from starwind.dev. Use this to get up-to-date component docs, installation guides, theming info, and usage examples. The documentation is optimized for AI consumption.",
+    "Fetches current Starwind UI v3 documentation across styled components, primitives, Runtime, migration, and Astro or React framework guides.",
   inputSchema: {
-    topic: z
-      .string()
-      .optional()
-      .describe(
-        "Optional topic to filter documentation (e.g., 'button', 'accordion', 'theming', 'installation'). Leave empty to get all documentation.",
-      ),
+    topic: z.string().optional(),
+    surface: z.enum(["auto", "component", "primitive", "guide", "runtime"]).optional(),
     full: z
       .boolean()
       .optional()
-      .describe(
-        "Whether to fetch the full documentation with complete code examples. Defaults to false for a more concise version.",
-      ),
+      .describe("Use the full aggregate reference when no exact page is found."),
   },
-  handler: async (args: StarwindDocsArgs = {}): Promise<StarwindDocsResult> => {
-    const isFull = args.full === true;
+  outputSchema: {
+    result: z.record(z.unknown()).describe("Structured Starwind documentation result."),
+  },
 
-    // If a topic is provided, try to fetch the specific markdown page first
-    if (args.topic) {
-      const topic = args.topic.toLowerCase().trim();
-      const markdownUrl = getMarkdownUrl(topic);
-
-      if (markdownUrl) {
-        const pageCacheKey = `page_${topic}`;
-
-        // Check cache for this specific page
-        let pageContent = docsCache.get(pageCacheKey);
-
-        if (!pageContent) {
-          // Check rate limit
-          if (!rateLimiter.canMakeCall()) {
-            throw new Error(
-              `Rate limit exceeded. Please try again in ${rateLimiter.getResetTimeSeconds()} seconds. (Limit: 10 requests per minute)`,
-            );
-          }
-
-          rateLimiter.recordCall();
-          const fetchedContent = await fetchDocPage(markdownUrl);
-
-          if (fetchedContent) {
-            pageContent = fetchedContent;
-            docsCache.set(pageCacheKey, pageContent, CACHE_TTL.PAGE);
-
-            const cacheInfo = docsCache.getInfo(pageCacheKey);
-
-            return {
-              documentation: pageContent,
-              resultType: "page",
-              url: markdownUrl,
-              topic: args.topic,
-              full: true, // Specific pages are always full
-              pageType: getPageTypeFromUrl(markdownUrl),
-              cacheInfo: cacheInfo
-                ? {
-                    age: `${cacheInfo.age} seconds`,
-                    remainingTtl: `${cacheInfo.remainingTtl} seconds`,
-                  }
-                : null,
-              rateLimitInfo: {
-                requestsRemaining: rateLimiter.getRemainingCalls(),
-                resetAfter: `${rateLimiter.getResetTimeSeconds()} seconds`,
-              },
-            };
-          }
-          // Page fetch failed, fall through to llms.txt fallback
-        } else {
-          // Found in cache
-          const cacheInfo = docsCache.getInfo(pageCacheKey);
-
+  async handler(args: StarwindDocsArgs = {}): Promise<StarwindDocsResult> {
+    const topic = args.topic?.trim().toLowerCase() || null;
+    const surface = args.surface ?? "auto";
+    if (topic) {
+      const page = await resolvePage(topic, surface);
+      if (page) {
+        const key = `page:${page.url}`;
+        const cached = docsCache.get(key);
+        const documentation = cached ?? (await fetchText(page.url));
+        if (documentation) {
+          if (!cached) docsCache.set(key, documentation, 2 * 60 * 60);
           return {
-            documentation: pageContent,
+            documentation,
             resultType: "page",
-            url: markdownUrl,
-            topic: args.topic,
+            url: page.url,
+            topic: args.topic ?? topic,
+            surface,
             full: true,
-            pageType: getPageTypeFromUrl(markdownUrl),
-            cacheInfo: cacheInfo
-              ? {
-                  age: `${cacheInfo.age} seconds`,
-                  remainingTtl: `${cacheInfo.remainingTtl} seconds`,
-                }
-              : null,
-            rateLimitInfo: {
-              requestsRemaining: rateLimiter.getRemainingCalls(),
-              resetAfter: `${rateLimiter.getResetTimeSeconds()} seconds`,
-            },
+            pageType: page.pageType,
+            metadataSource: page.source,
+            cacheInfo: docsCache.info(key),
+            rateLimitInfo: telemetry(),
           };
         }
       }
     }
 
-    // Fallback: fetch llms.txt and filter by topic
-    const url = isFull ? DOCS_URLS.full : DOCS_URLS.standard;
-    const cacheKey = isFull ? "docs_full" : "docs_standard";
-    const cacheTtl = isFull ? CACHE_TTL.FULL : CACHE_TTL.STANDARD;
-
-    // Check cache first
-    let docsContent = docsCache.get(cacheKey);
-
-    if (!docsContent) {
-      // Not in cache, check rate limit
-      if (!rateLimiter.canMakeCall()) {
-        throw new Error(
-          `Rate limit exceeded. Please try again in ${rateLimiter.getResetTimeSeconds()} seconds. (Limit: 10 requests per minute)`,
-        );
-      }
-
-      // Fetch from network
-      rateLimiter.recordCall();
-
-      try {
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch docs: ${response.status} ${response.statusText}`);
-        }
-        docsContent = await response.text();
-        docsCache.set(cacheKey, docsContent, cacheTtl);
-      } catch (error: any) {
-        throw new Error(`Error fetching Starwind documentation: ${error.message}`, {
-          cause: error,
-        });
-      }
-    }
-
-    // Filter by topic if provided
-    let filteredContent = docsContent;
-    if (args.topic) {
-      const topic = args.topic.toLowerCase().trim();
-      const lines = docsContent.split("\n");
-      const filteredLines: string[] = [];
-      let inRelevantSection = false;
-      let sectionDepth = 0;
-
-      for (const line of lines) {
-        // Check for section headers (# or ##)
-        const headerMatch = line.match(/^(#{1,3})\s+(.+)/);
-        if (headerMatch) {
-          const headerLevel = headerMatch[1].length;
-          const headerText = headerMatch[2].toLowerCase();
-
-          // Check if this header matches our topic
-          if (headerText.includes(topic)) {
-            inRelevantSection = true;
-            sectionDepth = headerLevel;
-            filteredLines.push(line);
-          } else if (inRelevantSection && headerLevel <= sectionDepth) {
-            // We've hit a same-level or higher header, end the section
-            inRelevantSection = false;
-          } else if (inRelevantSection) {
-            filteredLines.push(line);
-          }
-        } else if (inRelevantSection) {
-          filteredLines.push(line);
-        }
-      }
-
-      if (filteredLines.length > 0) {
-        filteredContent = filteredLines.join("\n");
-      } else {
-        // No exact section match, try simple text search (only lines containing the topic)
-        const relevantLines = lines.filter((line) => line.toLowerCase().includes(topic));
-        if (relevantLines.length > 0) {
-          filteredContent = relevantLines.join("\n");
-        } else {
-          filteredContent = `No documentation found for topic: "${args.topic}". Try searching for: button, accordion, dialog, card, theming, installation, or use without a topic filter to see all available documentation.`;
-        }
-      }
-    }
-
-    const cacheInfo = docsCache.getInfo(cacheKey);
-
-    // A topic was requested but no dedicated page was returned, so this content
-    // is filtered from the general docs and may be incomplete (degraded result).
-    const isFiltered = Boolean(args.topic);
+    const url = args.full ? DOCS_URLS.full : DOCS_URLS.concise;
+    const key = args.full ? "aggregate:full" : "aggregate:concise";
+    const cached = docsCache.get(key);
+    const aggregate = cached ?? (await fetchText(url));
+    if (!aggregate) throw new Error(`Unable to fetch Starwind documentation from ${url}`);
+    if (!cached) docsCache.set(key, aggregate, args.full ? 3 * 60 * 60 : 60 * 60);
+    const filtered = topic ? filterAggregate(aggregate, topic) : aggregate;
 
     return {
-      documentation: filteredContent,
-      resultType: isFiltered ? "filtered" : "full",
-      ...(isFiltered
-        ? {
-            note: `Could not return a dedicated documentation page for "${args.topic}". The content below is filtered from the general docs and may be incomplete. For best results, request a known topic such as: button, accordion, dialog, theming, or installation.`,
-          }
-        : {}),
+      documentation:
+        filtered ||
+        `No documentation found for topic: "${topic}". Try a component, primitive, migration, runtime, or framework name.`,
+      resultType: topic ? "filtered" : "full",
       url,
-      topic: args.topic || null,
-      full: isFull,
-      cacheInfo: cacheInfo
-        ? {
-            age: `${cacheInfo.age} seconds`,
-            remainingTtl: `${cacheInfo.remainingTtl} seconds`,
-          }
-        : null,
-      rateLimitInfo: {
-        requestsRemaining: rateLimiter.getRemainingCalls(),
-        resetAfter: `${rateLimiter.getResetTimeSeconds()} seconds`,
-      },
+      topic: args.topic ?? null,
+      surface,
+      full: args.full === true,
+      note: topic
+        ? "No exact manifest page resolved; this is a filtered aggregate result."
+        : undefined,
+      cacheInfo: docsCache.info(key),
+      rateLimitInfo: telemetry(),
     };
   },
 };

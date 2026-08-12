@@ -1,66 +1,40 @@
-## Development
+# Development
 
-This project is set up to use PNPM for package manager for development purposes. If you are not using pnpm, you will need to update the package.json file with the appropriate package manager commands you need.
+This pnpm-managed TypeScript project builds the Starwind UI MCP stdio server from `src/` into `dist/`.
 
-## Project Structure
-
-```
-src/
-  ├── config/         # Server configuration
-  │   └── settings.ts # Configuration settings
-  ├── tools/          # MCP tools implementations
-  │   ├── index.ts    # Tool registration
-  │   └── *.ts        # Individual tool implementations
-  ├── utils/          # Utility functions
-  └── server.ts       # Main MCP server implementation
-```
-
-## Local Development & Testing
-
-### Testing Locally in Windsurf
-
-1. Build the project:
-
-   ```bash
-   pnpm build
-   ```
-
-2. Update your Windsurf MCP config to point to your local build. Open your `mcp_config.json` (usually at `~/.codeium/windsurf/mcp_config.json`):
-
-   ```json
-   {
-     "mcpServers": {
-       "starwind-ui": {
-         "command": "node",
-         "args": ["C:/path/to/starwind-ui-mcp/dist/server.js"],
-         "env": {}
-       }
-     }
-   }
-   ```
-
-3. Restart Windsurf or reload MCP servers
-
-4. Test by asking Cascade to use the Starwind tools
-
-### Running Tests
+## Commands
 
 ```bash
+pnpm build
+pnpm lint
 pnpm test:run
 ```
 
-### Using Changesets
+The normal test suite uses local v3 manifest fixtures. To check the live production contract explicitly:
 
-Create a changeset when making changes:
+```bash
+RUN_LIVE_CONTRACT_TESTS=1 pnpm test:run src/utils/starwind_live_contract.test.ts
+```
+
+## Project structure
+
+```text
+src/
+  config/                 Server configuration
+  tools/                  Public MCP tools and registration
+  utils/                  Manifest, project, command, and package-manager helpers
+  server.ts               MCP stdio entrypoint
+test/                     Shared deterministic test fixtures
+```
+
+## Adding or changing tools
+
+Keep the public surface compact and intent-based. A tool definition needs a name, description, Zod input shape, Zod output shape, async handler, registration in `src/tools/index.ts`, and protocol-level tests.
+
+Never write diagnostic output to stdout in runtime code because it corrupts MCP stdio. Use structured tool warnings for user-facing diagnostics. Network metadata must have a timeout, schema validation, cache behavior, and a graceful fallback where appropriate.
+
+Use a changeset for publishable behavior changes:
 
 ```bash
 pnpm changeset
 ```
-
-## Adding New Tools
-
-1. Create a new tool file in `src/tools/`
-2. Register the tool in `src/tools/index.ts`
-3. Rebuild with `pnpm build`
-
-Keep the public MCP tool surface compact and intent-based. Do not add thin wrappers for every Starwind CLI command by default; uncommon or destructive operations such as setup, update, and remove should usually appear as command guidance from an existing tool unless they become common enough to justify their own MCP tool.

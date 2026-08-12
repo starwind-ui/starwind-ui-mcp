@@ -1,290 +1,322 @@
-/**
- * Starwind Add Tool
- * Generates validated install commands for Starwind UI components
- */
-
 import { z } from "zod";
 
 import { detectPackageManager, type PackageManager } from "../utils/package_manager.js";
+import { inspectStarwindProject } from "../utils/project_context.js";
 import {
   getDlxCommand,
   getExistingProjectProSetupCommand,
-  getProInitCommand,
+  getInitCommand,
 } from "../utils/starwind_commands.js";
 import {
-  getStandardComponentMetadata,
-  resetStandardComponentMetadataCache,
-  type StandardComponentMetadataSource,
-} from "../utils/starwind_component_metadata.js";
+  getStarwindManifest,
+  resetStarwindManifestCache,
+  type StarwindFramework,
+} from "../utils/starwind_manifest.js";
+import { getProDiscovery, getProUpgrade } from "../utils/starwind_pro_guidance.js";
+import {
+  getStarwindProManifest,
+  resetStarwindProManifestCache,
+} from "../utils/starwind_pro_manifest.js";
 
-/**
- * Interface for starwind add tool arguments
- */
 export interface StarwindAddArgs {
-  /** Component(s) to install */
   components: string[];
-  /** Whether to also include the init command (for new projects) */
+  surface?: "styled" | "primitive";
+  framework?: StarwindFramework;
+  to?: string;
+  overwrite?: boolean;
   init?: boolean;
-  /** Whether this is a Starwind Pro project (adds --pro to init command) */
   pro?: boolean;
-  /** Working directory for package manager detection */
   cwd?: string;
-  /** Override package manager detection (useful if auto-detection fails) */
-  packageManager?: "npm" | "pnpm" | "yarn";
+  packageManager?: PackageManager;
 }
 
-/**
- * Reset component cache state (for testing purposes)
- */
-export function resetAddToolState(): void {
-  resetStandardComponentMetadataCache();
-}
-
-const STANDARD_COMPONENT_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const ITEM_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const PRO_BLOCK_PATTERN = /^@starwind-pro\/[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SAFE_PATH_PATTERN = /^[a-zA-Z0-9._/-]+$/;
 
-function normalizeComponentName(component: string): string {
-  return component.trim().toLowerCase();
+export function resetAddToolState(): void {
+  resetStarwindManifestCache();
+  resetStarwindProManifestCache();
 }
 
-function isAllComponentRequest(component: string): boolean {
-  return component === "--all" || component === "all";
+function normalize(value: string): string {
+  return value.trim().toLowerCase();
 }
 
-function isProBlockName(component: string): boolean {
-  return PRO_BLOCK_PATTERN.test(component);
+function isAll(value: string): boolean {
+  return value === "all" || value === "--all";
 }
 
-function isAllowedComponentName(component: string): boolean {
-  const normalized = normalizeComponentName(component);
+function isProBlock(value: string): boolean {
+  return PRO_BLOCK_PATTERN.test(value);
+}
 
+function isSafeDestination(value: string): boolean {
+  const segments = value.split("/");
   return (
-    isAllComponentRequest(normalized) ||
-    STANDARD_COMPONENT_PATTERN.test(normalized) ||
-    PRO_BLOCK_PATTERN.test(normalized)
+    SAFE_PATH_PATTERN.test(value) &&
+    !value.startsWith("/") &&
+    value !== "." &&
+    !segments.includes("..")
   );
 }
 
-/**
- * Validate components against available components list
- */
-function validateComponents(
-  components: string[],
-  availableComponents: string[],
-): {
-  valid: string[];
-  invalid: string[];
-  suggestions: Record<string, string[]>;
-} {
-  const valid: string[] = [];
-  const invalid: string[] = [];
-  const suggestions: Record<string, string[]> = {};
-
-  for (const component of components) {
-    const normalized = component.toLowerCase().trim();
-
-    if (availableComponents.includes(normalized)) {
-      valid.push(normalized);
-    } else {
-      invalid.push(component);
-      // Find similar components for suggestions
-      const similar = availableComponents.filter(
-        (known) => known.includes(normalized) || normalized.includes(known),
-      );
-      if (similar.length > 0) {
-        suggestions[component] = similar;
-      }
-    }
-  }
-
-  return { valid, invalid, suggestions };
+function suggestionsFor(value: string, available: string[]): string[] {
+  return available.filter((candidate) => candidate.includes(value) || value.includes(candidate));
 }
 
-/**
- * Starwind Add tool definition
- */
+function parseProInstallItems(command: string, expectedBlock: string): string[] | null {
+  const tokens = command.trim().split(/\s+/);
+  if (tokens[0] !== "npx" || tokens[1] !== "starwind@latest" || tokens[2] !== "add") return null;
+  const items = tokens.slice(3);
+  if (items[0] !== expectedBlock || items.slice(1).some((item) => !ITEM_PATTERN.test(item))) {
+    return null;
+  }
+  return items;
+}
+
 export const starwindAddTool = {
   name: "starwind_add",
   description:
-    "Generates the installation command for Starwind UI components. Validates component names and returns the correct CLI command based on the detected package manager. Use this after consulting starwind_docs to know which components to install. For Starwind Pro blocks (prefixed with @starwind-pro/), set pro=true or the tool will auto-detect it.",
+    "Generates validated Starwind UI v3 install commands for styled components, vendored primitives, or Starwind Pro blocks, with optional Astro or React targeting.",
   inputSchema: {
-    components: z
-      .array(z.string())
-      .describe(
-        "Array of component names to install (e.g., ['button', 'card', 'dialog']). Use '--all' as a single item to install all components.",
-      ),
-    init: z
-      .boolean()
-      .optional()
-      .describe(
-        "Whether to include the init command for new projects. Set to true if Starwind UI has not been initialized in the project yet.",
-      ),
-    pro: z
-      .boolean()
-      .optional()
-      .describe(
-        "Set to true for Starwind Pro projects. This adds --pro to the init command. Required when using @starwind-pro/ blocks. Auto-detected if components contain @starwind-pro/ prefix.",
-      ),
-    cwd: z
-      .string()
-      .optional()
-      .describe("Working directory for package manager detection. Defaults to current directory."),
-    packageManager: z
-      .enum(["npm", "pnpm", "yarn"])
-      .optional()
-      .describe(
-        "Override the auto-detected package manager. Use this if package manager detection fails or you want to force a specific one.",
-      ),
+    components: z.array(z.string()).describe("Names to install, or a single 'all'/'--all' item."),
+    surface: z.enum(["styled", "primitive"]).optional().describe("Defaults to styled."),
+    framework: z.enum(["astro", "react"]).optional().describe("Optional framework override."),
+    to: z.string().optional().describe("Primitive destination passed to --to."),
+    overwrite: z.boolean().optional().describe("Allow the CLI to overwrite existing files."),
+    init: z.boolean().optional().describe("Prepend project initialization for a new setup."),
+    pro: z.boolean().optional().describe("Configure paid Pro authorization during optional init."),
+    cwd: z.string().optional(),
+    packageManager: z.enum(["npm", "pnpm", "yarn"]).optional(),
   },
-  handler: async (args: StarwindAddArgs) => {
-    const { components, init = false, cwd, packageManager } = args;
+  outputSchema: {
+    result: z.record(z.unknown()).describe("Structured Starwind installation result."),
+  },
 
-    if (!components || components.length === 0) {
-      throw new Error("At least one component must be specified");
+  async handler(args: StarwindAddArgs): Promise<Record<string, unknown>> {
+    if (!args.components?.length) throw new Error("At least one component must be specified");
+
+    const surface = args.surface ?? "styled";
+    const normalized = args.components.map(normalize);
+    const unsafe = normalized.filter(
+      (value) => !isAll(value) && !ITEM_PATTERN.test(value) && !PRO_BLOCK_PATTERN.test(value),
+    );
+    if (unsafe.length) {
+      return { success: false, error: "Invalid component name", invalidComponents: unsafe };
+    }
+    if (args.to && !isSafeDestination(args.to)) {
+      return { success: false, error: "Invalid primitive destination path" };
+    }
+    if (args.to && surface !== "primitive") {
+      return { success: false, error: "The --to destination is only valid for primitive installs" };
     }
 
-    const invalidComponentNames = components.filter(
-      (component) => !isAllowedComponentName(component),
-    );
-    if (invalidComponentNames.length > 0) {
+    const proBlocks = normalized.filter(isProBlock);
+    if (surface === "primitive" && proBlocks.length) {
+      return { success: false, error: "Starwind Pro blocks are styled installs, not primitives" };
+    }
+
+    const cwd = args.cwd ?? process.cwd();
+    const project = inspectStarwindProject(cwd);
+    const effectiveFramework =
+      args.framework ?? project.configuredFramework ?? project.detectedFramework;
+    if (effectiveFramework === "react" && (proBlocks.length || args.pro === true)) {
       return {
         success: false,
-        error: "Invalid component name",
-        invalidComponents: invalidComponentNames,
-        hint: "Component names may only include lowercase letters, numbers, hyphens, '--all', or '@starwind-pro/<block-name>'.",
+        error: "Starwind Pro blocks and paid authorization currently target Astro, not React",
+        project,
       };
     }
 
-    const normalizedComponents = components.map(normalizeComponentName);
+    const pmInfo = args.packageManager
+      ? { name: args.packageManager, source: "user-specified" as const }
+      : { ...detectPackageManager({ cwd }), source: "detected" as const };
+    const dlx = getDlxCommand(pmInfo.name);
+    const proMetadataPromise = proBlocks.length
+      ? getStarwindProManifest()
+          .then((value) => ({ ok: true as const, ...value }))
+          .catch(() => ({ ok: false as const }))
+      : Promise.resolve({ ok: false as const });
+    const [{ manifest, source }, proMetadata] = await Promise.all([
+      getStarwindManifest(),
+      proMetadataPromise,
+    ]);
+    const installAll = normalized.some(isAll);
+    if (installAll && normalized.length > 1) {
+      return { success: false, error: "Use 'all' by itself instead of mixing it with named items" };
+    }
 
-    // Auto-detect Pro mode if any component has a valid @starwind-pro/ prefix
-    const hasProComponents = normalizedComponents.some(isProBlockName);
-    const isPro = args.pro === true || hasProComponents;
-
-    // Detect package manager (or use override)
-    const pmInfo = packageManager
-      ? { name: packageManager as PackageManager }
-      : detectPackageManager({ cwd });
-    const dlxCommand = getDlxCommand(pmInfo.name);
-
-    // Check for --all flag
-    const installAll = normalizedComponents.some(isAllComponentRequest);
-
-    let addCommand: string;
-    let validation: ReturnType<typeof validateComponents> | null = null;
-    let availableComponents: string[] | undefined;
-    let componentSource: StandardComponentMetadataSource | undefined;
-
-    // Separate Pro blocks from standard components
-    const proBlocks = normalizedComponents.filter(isProBlockName);
-    const standardComponents = normalizedComponents.filter(
-      (component) => !isProBlockName(component) && !isAllComponentRequest(component),
+    const available =
+      surface === "styled"
+        ? manifest.components
+            .filter((item) => item.installable)
+            .filter(
+              (item) =>
+                !effectiveFramework || item.implementationTargets.includes(effectiveFramework),
+            )
+            .map((item) => item.name)
+        : manifest.layeredDocs.primitives
+            .filter(
+              (item) =>
+                !effectiveFramework ||
+                item.adapterUsage.some(
+                  (usage) => usage.framework.toLowerCase() === effectiveFramework,
+                ),
+            )
+            .map((item) => item.id);
+    const requested = normalized.filter((value) => !isAll(value) && !isProBlock(value));
+    const valid = requested.filter((value) => available.includes(value));
+    const invalid = requested.filter((value) => !available.includes(value));
+    const suggestions = Object.fromEntries(
+      invalid
+        .map((value) => [value, suggestionsFor(value, available)])
+        .filter(([, values]) => values.length),
     );
 
-    if (installAll) {
-      addCommand = `${dlxCommand} starwind@latest add --all --yes`;
-    } else if (proBlocks.length > 0 && standardComponents.length === 0) {
-      addCommand = `${dlxCommand} starwind@latest add ${proBlocks.join(" ")} --yes`;
-    } else {
-      // Fetch available components from llms.txt only when standard validation needs it.
-      const { components: componentMetadata, source } = await getStandardComponentMetadata();
-      componentSource = source;
-      availableComponents = componentMetadata.map((component) => component.slug);
-
-      // Validate standard components against fetched list
-      validation = validateComponents(standardComponents, availableComponents);
-
-      if (validation.valid.length === 0 && proBlocks.length === 0) {
-        return {
-          success: false,
-          error: "No valid components specified",
-          invalidComponents: validation.invalid,
-          suggestions: validation.suggestions,
-          availableComponents,
-          componentSource,
-          hint: "Use starwind_docs tool to see available components and their documentation.",
-        };
-      }
-
-      // Combine valid standard components with Pro blocks
-      const allComponents = [...validation.valid, ...proBlocks];
-      addCommand = `${dlxCommand} starwind@latest add ${allComponents.join(" ")} --yes`;
-    }
-
-    // Build response
-    const response: Record<string, unknown> = {
-      success: true,
-      packageManager: pmInfo.name,
-      commands: [] as string[],
-    };
-    if (componentSource) {
-      response.componentSource = componentSource;
-    }
-
-    // Add init command if requested
-    if (init) {
-      const initCommand = isPro
-        ? getProInitCommand(dlxCommand)
-        : `${dlxCommand} starwind@latest init --defaults`;
-      (response.commands as string[]).push(initCommand);
-      response.initNote = isPro
-        ? "The init command uses --defaults --pro to set up Starwind Pro. This is REQUIRED for @starwind-pro/ blocks to work."
-        : "The init command uses --defaults to accept all default options. For Starwind Pro blocks, use init with pro=true.";
-    }
-
-    // Add Pro mode info to response
-    response.proMode = isPro;
-    if (hasProComponents && !args.pro) {
-      response.proAutoDetected = true;
-    }
-
-    (response.commands as string[]).push(addCommand);
-
-    // Single command for easy copy-paste
-    response.command = (response.commands as string[]).join(" && ");
-
-    // Add validation info if we validated components
-    if (validation) {
-      // Include both validated standard components and Pro blocks
-      response.componentsToInstall = [...validation.valid, ...proBlocks];
-
-      if (validation.invalid.length > 0) {
-        response.warnings = {
-          invalidComponents: validation.invalid,
-          suggestions: validation.suggestions,
-          message: `Some components were not recognized and will be skipped: ${validation.invalid.join(", ")}`,
-        };
-      }
-    } else if (proBlocks.length > 0) {
-      response.componentsToInstall = proBlocks;
-    } else {
-      response.componentsToInstall = ["all"];
-    }
-
-    if (availableComponents) {
-      response.availableComponents = availableComponents;
-    }
-    response.instructions =
-      "Run the command in your project directory. Make sure you have an Astro project with Tailwind CSS v4 configured.";
-    response.cliFlags = {
-      note: "Commands include --yes to skip confirmation prompts (required for AI execution).",
-      availableFlags: {
-        add: ["--yes (skip prompts)", "--all (install all components)"],
-        init: ["--defaults (accept all defaults)", "--pro (required for Starwind Pro blocks)"],
-      },
-    };
-
-    // Add important note about Pro initialization
-    if (isPro) {
-      response.proSetup = {
-        newProjectCommand: getProInitCommand(dlxCommand),
-        existingProjectCommand: getExistingProjectProSetupCommand(dlxCommand, pmInfo.name),
-        note: "For a new project, initialize with --pro. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
+    if (!installAll && valid.length === 0 && proBlocks.length === 0) {
+      return {
+        success: false,
+        error: "No valid items specified",
+        invalidComponents: invalid,
+        suggestions,
+        availableItems: available,
+        metadataSource: source,
       };
-      response.proNote =
-        "IMPORTANT: Starwind Pro blocks require Starwind Pro setup. For a new project, initialize with --pro. For an already initialized Starwind UI project, run setup once before adding Pro blocks.";
     }
 
-    return response;
+    if (proBlocks.length && !proMetadata.ok) {
+      return {
+        success: false,
+        error: "Unable to validate Pro blocks because the Pro manifest is unavailable",
+        invalidComponents: proBlocks,
+      };
+    }
+    const resolvedProBlocks = proBlocks.map((name) => ({
+      name,
+      block: proMetadata.ok
+        ? proMetadata.manifest.blocks.find(
+            (candidate) => candidate.id === name.slice("@starwind-pro/".length),
+          )
+        : undefined,
+    }));
+    const unknownProBlocks = resolvedProBlocks.filter(({ block }) => !block);
+    if (unknownProBlocks.length) {
+      return {
+        success: false,
+        error: "Unknown Pro block",
+        invalidComponents: unknownProBlocks.map(({ name }) => name),
+      };
+    }
+    const proPlans = resolvedProBlocks.map(({ name, block }) => {
+      if (!block) throw new Error("Validated Pro block was unexpectedly unavailable");
+      const installItems = parseProInstallItems(block.installCommand, name);
+      return {
+        name,
+        plan: block.plan,
+        installItems,
+        dependencies: installItems?.slice(1) ?? [],
+      };
+    });
+    const malformedProBlocks = proPlans.filter((block) => block.installItems === null);
+    if (malformedProBlocks.length) {
+      return {
+        success: false,
+        error: "Invalid Pro manifest install command",
+        invalidComponents: malformedProBlocks.map((block) => block.name),
+      };
+    }
+    const paidBlocks = proPlans.filter((block) => block.plan === "pro");
+    const expandedProItems = proPlans.flatMap((block) => block.installItems ?? []);
+    const names = installAll ? [] : [...new Set([...valid, ...expandedProItems])];
+    const namespace = surface === "primitive" ? " primitives" : "";
+    const flags = [installAll ? "--all" : names.join(" "), "--yes"];
+    if (args.framework) flags.push("--framework", args.framework);
+    if (surface === "primitive" && args.to) flags.push("--to", args.to);
+    if (args.overwrite) flags.push("--overwrite");
+    flags.push("--package-manager", pmInfo.name);
+    const addCommand = `${dlx} starwind@latest${namespace} add ${flags.filter(Boolean).join(" ")}`;
+    const paidAuthorizationRequested = args.pro === true;
+    const needsProGuidance = paidAuthorizationRequested || paidBlocks.length > 0;
+    const upgradeRequired = needsProGuidance && !project.proRegistryConfigured;
+    const setupCommand = args.init
+      ? getInitCommand(dlx, { framework: args.framework, pro: true })
+      : getExistingProjectProSetupCommand(dlx);
+    const commands: string[] = [];
+    let command: string;
+    let deferredCommand: string | undefined;
+    if (upgradeRequired) {
+      commands.push(setupCommand);
+      command = setupCommand;
+      deferredCommand = addCommand;
+    } else {
+      if (args.init) {
+        commands.push(
+          getInitCommand(dlx, {
+            framework: args.framework,
+            pro: paidAuthorizationRequested,
+          }),
+        );
+      }
+      commands.push(addCommand);
+      command = commands.join(" && ");
+    }
+
+    return {
+      success: true,
+      surface,
+      framework: effectiveFramework,
+      packageManager: pmInfo.name,
+      packageManagerSource: pmInfo.source,
+      metadataSource: source,
+      componentsToInstall: installAll ? ["all"] : names,
+      availableItems: available,
+      commands,
+      command,
+      ...(deferredCommand ? { deferredCommand } : {}),
+      project,
+      warnings: invalid.length
+        ? {
+            invalidComponents: invalid,
+            suggestions,
+            message: `Unrecognized or framework-incompatible items were skipped: ${invalid.join(", ")}`,
+          }
+        : undefined,
+      instructions: upgradeRequired
+        ? "Complete Pro setup and add the license key before running the deferred install command."
+        : "Run the command in an initialized Starwind UI v3 project root.",
+      ...(proBlocks.length
+        ? {
+            proAccess: {
+              blocks: proPlans,
+              metadataSource: proMetadata.ok ? proMetadata.source : "unavailable",
+              paidAuthorizationRequested,
+              proRegistryConfigured: project.proRegistryConfigured,
+              note: paidBlocks.length
+                ? project.proRegistryConfigured
+                  ? "Pro registry configuration was detected. Confirm STARWIND_LICENSE_KEY is set before installing paid blocks."
+                  : "Paid blocks require a license. Complete the Pro upgrade steps before installing."
+                : "Free Pro catalog blocks work after ordinary Starwind initialization.",
+            },
+          }
+        : {}),
+      ...(needsProGuidance
+        ? {
+            proUpgrade: getProUpgrade({
+              dlxCommand: dlx,
+              reason: paidBlocks.length
+                ? `Paid authorization is required for: ${paidBlocks
+                    .map((block) => block.name)
+                    .join(", ")}.`
+                : "Paid Starwind Pro authorization was requested.",
+              configured: project.proRegistryConfigured,
+              setupCommand,
+              deferredCommand,
+            }),
+          }
+        : proBlocks.length
+          ? { proDiscovery: getProDiscovery(dlx) }
+          : {}),
+    };
   },
 };

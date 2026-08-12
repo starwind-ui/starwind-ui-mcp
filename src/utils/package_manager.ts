@@ -98,8 +98,6 @@ export function detectPackageManager(options: PackageManagerOptions = {}): Packa
     const lockFile = LOCK_FILES[pm];
     const lockFilePath = resolve(cwd, lockFile);
 
-    console.log(`Checking for ${lockFile} at ${lockFilePath}`);
-
     if (existsSync(lockFilePath)) {
       detected.push(pm);
       // Found a lock file, no need to check others
