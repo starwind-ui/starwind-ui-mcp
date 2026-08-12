@@ -8,3 +8,6 @@ allowBuilds:
 # 2 day minimum release age
 minimumReleaseAge: 2880
 minimumReleaseAgeStrict: true
+minimumReleaseAgeExclude:
+  - starwind
+  - '@starwind-ui/*'
