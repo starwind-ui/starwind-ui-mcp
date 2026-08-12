@@ -1,345 +1,291 @@
 import { z } from "zod";
 
+import { inspectStarwindProject } from "../utils/project_context.js";
 import {
-  getExistingProjectProSetupCommand,
-  getProInitCommand,
-} from "../utils/starwind_commands.js";
+  getStarwindManifest,
+  resetStarwindManifestCache,
+  type StarwindComponent,
+  type StarwindFramework,
+  type StarwindPrimitive,
+} from "../utils/starwind_manifest.js";
+import { getProDiscovery, getProUpgrade } from "../utils/starwind_pro_guidance.js";
 import {
-  getStandardComponentMetadata,
-  resetStandardComponentMetadataCache,
-  type StandardComponentMetadata,
-  type StandardComponentMetadataSource,
-} from "../utils/starwind_component_metadata.js";
-
-interface ManifestBlock {
-  id: string;
-  name: string;
-  description: string;
-  categories: string[];
-  keywords: string[];
-  plan: "free" | "pro";
-  installCommand: string;
-  previewUrl: string;
-}
-
-interface Manifest {
-  $schema: string;
-  name: string;
-  version: string;
-  generatedAt: string;
-  baseUrl: string;
-  totalBlocks: number;
-  categories: string[];
-  blocks: ManifestBlock[];
-}
-
-interface ManifestCache {
-  data: Manifest;
-  expiresAt: number;
-}
+  getStarwindProManifest,
+  resetStarwindProManifestCache,
+  type StarwindProBlock,
+} from "../utils/starwind_pro_manifest.js";
 
 export interface StarwindSearchArgs {
   query?: string;
+  cwd?: string;
+  surface?: "styled" | "primitive" | "all";
+  framework?: StarwindFramework | "all";
   category?: string;
   plan?: "free" | "pro";
   limit?: number;
   offset?: number;
 }
 
-interface StandardComponentResult extends StandardComponentMetadata {
-  addCommand: string;
-}
-
-interface ProBlockResult {
-  id: string;
-  name: string;
-  description: string;
-  categories: string[];
-  plan: "free" | "pro";
-  installCommand: string;
-  previewUrl: string;
-}
-
-interface SearchPagination {
-  limit: number;
-  offset: number;
-  hasMore: boolean;
-}
-
-type ProBlockSource = "network" | "cache" | "unavailable";
-
-interface StarwindSearchResult {
-  query: string | null;
-  filters: {
-    category: string | null;
-    plan: "free" | "pro" | null;
-  };
-  totalMatches: number;
-  standardComponents: {
-    source: StandardComponentMetadataSource;
-    totalAvailable: number;
-    totalMatches: number;
-    results: StandardComponentResult[];
-  };
-  proBlocks: {
-    source: ProBlockSource;
-    totalAvailable: number;
-    totalMatches: number;
-    resultsReturned: number;
-    availableCategories: string[];
-    pagination: SearchPagination;
-    results: ProBlockResult[];
-    error?: string;
-  };
-  proSetup?: {
-    newProjectCommand: string;
-    existingProjectCommand: string;
-    note: string;
-  };
-  message?: string;
-}
-
-const MANIFEST_URL = "https://pro.starwind.dev/r/manifest.json";
-const CACHE_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 
-let manifestCache: ManifestCache | null = null;
-
 function normalizeQuery(query?: string): string | null {
-  const normalized = query?.trim().toLowerCase();
-  return normalized ? normalized : null;
+  const value = query?.trim().toLowerCase();
+  return value || null;
 }
 
-function getEffectiveLimit(limit?: number): number {
-  if (typeof limit !== "number" || Number.isNaN(limit)) {
-    return DEFAULT_LIMIT;
-  }
-
-  return Math.min(Math.max(1, Math.floor(limit)), MAX_LIMIT);
-}
-
-function getEffectiveOffset(offset?: number): number {
-  if (typeof offset !== "number" || Number.isNaN(offset)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.floor(offset));
-}
-
-async function getManifest(): Promise<{ manifest: Manifest; source: "network" | "cache" }> {
-  if (manifestCache && Date.now() < manifestCache.expiresAt) {
-    return { manifest: manifestCache.data, source: "cache" };
-  }
-
-  const response = await fetch(MANIFEST_URL);
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch Starwind Pro manifest: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  const manifest = (await response.json()) as Manifest;
-  manifestCache = {
-    data: manifest,
-    expiresAt: Date.now() + CACHE_TTL_MS,
-  };
-
-  return { manifest, source: "network" };
-}
-
-function scoreStandardComponent(component: StandardComponentMetadata, query: string): number {
-  const name = component.name.toLowerCase();
-  const slug = component.slug.toLowerCase();
-
-  if (slug === query || name === query) return 100;
-  if (slug.includes(query) || name.includes(query)) return 50;
-  if (query.includes(slug)) return 25;
-
+function scoreText(query: string, exact: string[], searchable: string[]): number {
+  if (exact.some((value) => value.toLowerCase() === query)) return 100;
+  if (exact.some((value) => value.toLowerCase().includes(query))) return 60;
+  if (searchable.some((value) => value.toLowerCase().includes(query))) return 25;
   return 0;
 }
 
-function scoreProBlock(block: ManifestBlock, query: string): number {
-  const name = block.name.toLowerCase();
-  const id = block.id.toLowerCase();
-  const description = block.description.toLowerCase();
-  const categories = block.categories.map((category) => category.toLowerCase());
-  const keywords = block.keywords.map((keyword) => keyword.toLowerCase());
-
-  let score = 0;
-  if (name === query) score += 100;
-  else if (name.includes(query)) score += 50;
-  if (id.includes(query)) score += 40;
-  if (keywords.some((keyword) => keyword === query)) score += 30;
-  if (keywords.some((keyword) => keyword.includes(query))) score += 20;
-  if (categories.some((category) => category.includes(query))) score += 15;
-  if (description.includes(query)) score += 10;
-
-  return score;
-}
-
-function searchStandardComponents(
-  components: StandardComponentMetadata[],
+function searchStyled(
+  components: StarwindComponent[],
   query: string | null,
-): StandardComponentResult[] {
-  if (!query) {
-    return [];
-  }
-
+  framework?: StarwindFramework,
+) {
+  if (!query) return [];
   return components
-    .map((component) => ({
-      component,
-      score: scoreStandardComponent(component, query),
+    .filter((item) => item.installable)
+    .filter((item) => !framework || item.implementationTargets.includes(framework))
+    .map((item) => ({
+      item,
+      score: scoreText(
+        query,
+        [item.name, item.title, ...item.aliases],
+        [item.description, ...item.publicExports, item.foundation?.label ?? ""],
+      ),
     }))
     .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score || a.component.slug.localeCompare(b.component.slug))
-    .map(({ component }) => ({
-      ...component,
-      addCommand: `npx starwind@latest add ${component.slug} --yes`,
+    .sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name))
+    .map(({ item }) => ({
+      name: item.name,
+      title: item.title,
+      description: item.description,
+      implementationTargets: item.implementationTargets,
+      publicImportPath: item.publicImportPath,
+      docsUrl: item.docsUrl,
+      markdownUrl: item.markdownUrl,
+      foundation: item.foundation ?? null,
+      addCommand: `npx starwind@latest add ${item.name} --yes${framework ? ` --framework ${framework}` : ""}`,
     }));
 }
 
-function searchProBlocks(
-  blocks: ManifestBlock[],
+function searchPrimitives(
+  primitives: StarwindPrimitive[],
   query: string | null,
-  filters: { category?: string; plan?: "free" | "pro" },
-): ManifestBlock[] {
-  let results = [...blocks];
-
-  if (filters.category) {
-    const category = filters.category.toLowerCase();
-    results = results.filter((block) =>
-      block.categories.some((blockCategory) => blockCategory.toLowerCase() === category),
-    );
-  }
-
-  if (filters.plan) {
-    results = results.filter((block) => block.plan === filters.plan);
-  }
-
-  if (!query) {
-    return results;
-  }
-
-  return results
-    .map((block) => ({ block, score: scoreProBlock(block, query) }))
+  framework?: StarwindFramework,
+) {
+  if (!query) return [];
+  return primitives
+    .filter(
+      (item) =>
+        !framework ||
+        item.adapterUsage.some((usage) => usage.framework.toLowerCase() === framework),
+    )
+    .map((item) => ({
+      item,
+      score: scoreText(
+        query,
+        [item.id, item.title, item.label, ...item.aliases],
+        [item.runtime?.factory ?? ""],
+      ),
+    }))
     .filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score || a.block.id.localeCompare(b.block.id))
-    .map(({ block }) => block);
+    .sort((a, b) => b.score - a.score || a.item.id.localeCompare(b.item.id))
+    .map(({ item }) => ({
+      id: item.id,
+      title: item.title,
+      docsUrl: item.docsUrl,
+      markdownUrl: item.markdownUrl,
+      adapters: item.adapterUsage
+        .filter((usage) => !framework || usage.framework.toLowerCase() === framework)
+        .map((usage) => ({
+          framework: usage.framework.toLowerCase(),
+          packageName: usage.packageName,
+          importSource: usage.importSource,
+        })),
+      runtime: item.runtime ?? null,
+      addCommand: `npx starwind@latest primitives add ${item.id} --yes${framework ? ` --framework ${framework}` : ""}`,
+    }));
 }
 
-function toProBlockResult(block: ManifestBlock, baseUrl: string): ProBlockResult {
-  return {
-    id: block.id,
-    name: block.name,
-    description: block.description,
-    categories: block.categories,
-    plan: block.plan,
-    installCommand: block.installCommand.includes("--yes")
-      ? block.installCommand
-      : `${block.installCommand} --yes`,
-    previewUrl: `${baseUrl}${block.previewUrl}`,
-  };
+function scorePro(block: StarwindProBlock, query: string): number {
+  return scoreText(
+    query,
+    [block.id, block.name],
+    [block.description, ...block.categories, ...block.keywords],
+  );
+}
+
+function resolvePreviewUrl(previewUrl: string, baseUrl: string): string | null {
+  try {
+    return new URL(previewUrl, baseUrl).toString();
+  } catch {
+    return null;
+  }
 }
 
 export function resetStarwindSearchToolState(): void {
-  manifestCache = null;
-  resetStandardComponentMetadataCache();
+  resetStarwindProManifestCache();
+  resetStarwindManifestCache();
 }
 
 export const starwindSearchTool = {
   name: "starwind_search",
   description:
-    "Searches Starwind UI standard components and Starwind Pro blocks by query. Mirrors the Starwind CLI search shape with Pro block plan/category filters plus limit and offset pagination.",
+    "Searches Starwind UI v3 styled components, Primitive adapters, and Starwind Pro blocks with framework-aware results.",
   inputSchema: {
-    query: z.string().optional().describe("Search query for components and Pro blocks."),
-    plan: z.enum(["free", "pro"]).optional().describe("Filter Starwind Pro blocks by plan type."),
-    category: z.string().optional().describe("Filter Starwind Pro blocks by category."),
-    limit: z
-      .number()
-      .optional()
-      .describe("Maximum number of Pro blocks to return. Defaults to 20, maximum 50."),
-    offset: z
-      .number()
-      .optional()
-      .describe("Offset for paginating Pro block results. Defaults to 0."),
+    query: z.string().optional(),
+    surface: z.enum(["styled", "primitive", "all"]).optional().describe("Defaults to all."),
+    cwd: z.string().optional().describe("Project directory used to detect existing Pro setup."),
+    framework: z.enum(["astro", "react", "all"]).optional(),
+    plan: z.enum(["free", "pro"]).optional(),
+    category: z.string().optional(),
+    limit: z.number().optional().describe("Pro result limit; defaults to 20 and caps at 50."),
+    offset: z.number().optional(),
   },
-  handler: async (args: StarwindSearchArgs = {}): Promise<StarwindSearchResult> => {
+  outputSchema: {
+    result: z.record(z.unknown()).describe("Structured layered Starwind search result."),
+  },
+
+  async handler(args: StarwindSearchArgs = {}): Promise<Record<string, any>> {
     const query = normalizeQuery(args.query);
-    const limit = getEffectiveLimit(args.limit);
-    const offset = getEffectiveOffset(args.offset);
-    const isOverviewRequest = !query && !args.category && !args.plan;
+    const surface = args.surface ?? "all";
+    const framework = args.framework && args.framework !== "all" ? args.framework : undefined;
+    const limit = Math.min(Math.max(1, Math.floor(args.limit ?? DEFAULT_LIMIT)), MAX_LIMIT);
+    const offset = Math.max(0, Math.floor(args.offset ?? 0));
+    const metadataPromise = getStarwindManifest();
+    const project = inspectStarwindProject(args.cwd ?? process.cwd());
+    const shouldSearchPro = surface !== "primitive" && framework !== "react";
+    const proPromise = shouldSearchPro
+      ? getStarwindProManifest()
+          .then((value) => ({ ok: true as const, ...value }))
+          .catch((error: unknown) => ({
+            ok: false as const,
+            error: error instanceof Error ? error.message : "Unknown Pro manifest error",
+          }))
+      : Promise.resolve({
+          ok: false as const,
+          error:
+            framework === "react"
+              ? "Starwind Pro blocks currently target Astro."
+              : "Pro search is not part of primitive-only results.",
+        });
+    const [{ manifest, source }, pro] = await Promise.all([metadataPromise, proPromise]);
 
-    const componentMetadataPromise = getStandardComponentMetadata();
-    const manifestPromise = getManifest()
-      .then((value) => ({ ok: true as const, ...value }))
-      .catch((error: unknown) => ({
-        ok: false as const,
-        error: error instanceof Error ? error.message : "Unknown Starwind Pro manifest error",
-      }));
-    const { components, source: componentSource } = await componentMetadataPromise;
-    const manifestResult = await manifestPromise;
-
-    const standardResults = searchStandardComponents(components, query);
-    const proMatches =
-      !manifestResult.ok || isOverviewRequest
+    const styledResults =
+      surface === "primitive" ? [] : searchStyled(manifest.components, query, framework);
+    const primitiveResults =
+      surface === "styled"
         ? []
-        : searchProBlocks(manifestResult.manifest.blocks, query, {
-            category: args.category,
-            plan: args.plan,
-          });
-    const pagedProMatches = proMatches.slice(offset, offset + limit);
-    const proResults = manifestResult.ok
-      ? pagedProMatches.map((block) => toProBlockResult(block, manifestResult.manifest.baseUrl))
+        : searchPrimitives(manifest.layeredDocs.primitives, query, framework);
+    let proMatches: StarwindProBlock[] = [];
+    if (pro.ok && (query || args.category || args.plan)) {
+      proMatches = pro.manifest.blocks
+        .filter((block) => !args.plan || block.plan === args.plan)
+        .filter(
+          (block) =>
+            !args.category ||
+            block.categories.some(
+              (category) => category.toLowerCase() === args.category?.toLowerCase(),
+            ),
+        )
+        .map((block) => ({ block, score: query ? scorePro(block, query) : 1 }))
+        .filter(({ score }) => score > 0)
+        .sort((a, b) => b.score - a.score || a.block.id.localeCompare(b.block.id))
+        .map(({ block }) => block);
+    }
+    const pagedPro = proMatches.slice(offset, offset + limit);
+    const proResults = pro.ok
+      ? pagedPro.map((block) => {
+          const previewUrl = resolvePreviewUrl(block.previewUrl, pro.manifest.baseUrl);
+          return {
+            id: block.id,
+            name: block.name,
+            description: block.description,
+            categories: block.categories,
+            plan: block.plan,
+            frameworkSupport: ["astro"],
+            paidAuthorizationRequired: block.plan === "pro",
+            ...(block.plan === "free"
+              ? {
+                  installCommand: block.installCommand.includes("--yes")
+                    ? block.installCommand
+                    : `${block.installCommand} --yes`,
+                }
+              : {
+                  deferredInstallCommand: block.installCommand.includes("--yes")
+                    ? block.installCommand
+                    : `${block.installCommand} --yes`,
+                }),
+            ...(previewUrl ? { previewUrl } : {}),
+          };
+        })
       : [];
-    const totalMatches = standardResults.length + proMatches.length;
+    const paidResults = proResults.filter((block) => block.plan === "pro");
+    const totalMatches = styledResults.length + primitiveResults.length + proMatches.length;
 
-    const result: StarwindSearchResult = {
+    return {
       query,
       filters: {
-        category: args.category || null,
-        plan: args.plan || null,
+        surface,
+        framework: args.framework ?? "all",
+        category: args.category ?? null,
+        plan: args.plan ?? null,
       },
       totalMatches,
-      standardComponents: {
-        source: componentSource,
-        totalAvailable: components.length,
-        totalMatches: standardResults.length,
-        results: standardResults,
+      styledComponents: {
+        source,
+        totalAvailable: manifest.components.filter((item) => item.installable).length,
+        totalMatches: styledResults.length,
+        results: styledResults,
+      },
+      primitives: {
+        source,
+        totalAvailable: manifest.layeredDocs.primitives.length,
+        totalMatches: primitiveResults.length,
+        results: primitiveResults,
       },
       proBlocks: {
-        source: manifestResult.ok ? manifestResult.source : "unavailable",
-        totalAvailable: manifestResult.ok ? manifestResult.manifest.totalBlocks : 0,
+        source: pro.ok ? pro.source : "unavailable",
+        frameworkSupport: ["astro"],
+        totalAvailable: pro.ok ? pro.manifest.totalBlocks : 0,
         totalMatches: proMatches.length,
         resultsReturned: proResults.length,
-        availableCategories: manifestResult.ok ? manifestResult.manifest.categories : [],
+        availableCategories: pro.ok ? pro.manifest.categories : [],
         pagination: {
           limit,
           offset,
-          hasMore: offset + proResults.length < proMatches.length,
+          hasMore: proResults.length > 0 && offset + proResults.length < proMatches.length,
         },
         results: proResults,
-        ...(!manifestResult.ok ? { error: manifestResult.error } : {}),
+        ...(pro.ok && proResults.length && paidResults.length === 0
+          ? { note: "Free Pro catalog blocks install after ordinary Starwind initialization." }
+          : !pro.ok
+            ? { note: pro.error }
+            : {}),
       },
+      ...(paidResults.length
+        ? {
+            proUpgrade: getProUpgrade({
+              reason: `Paid authorization is required for: ${paidResults
+                .map((block) => block.id)
+                .join(", ")}.`,
+              configured: project.proRegistryConfigured,
+            }),
+          }
+        : shouldSearchPro && pro.ok
+          ? { proDiscovery: getProDiscovery() }
+          : {}),
+      message:
+        !query && !args.category && !args.plan
+          ? "Provide a query, category, or plan to search Starwind UI."
+          : totalMatches === 0
+            ? "No matching Starwind items found."
+            : undefined,
     };
-
-    if (isOverviewRequest) {
-      result.message =
-        "Provide a query, category, or plan to search Starwind components and Pro blocks.";
-    } else if (totalMatches === 0) {
-      result.message = manifestResult.ok
-        ? "No Starwind components or Pro blocks found. Try a broader query or remove filters."
-        : "No Starwind standard components found. Starwind Pro block search is temporarily unavailable.";
-    }
-
-    if (proResults.length > 0) {
-      result.proSetup = {
-        newProjectCommand: getProInitCommand("npx"),
-        existingProjectCommand: getExistingProjectProSetupCommand("npx"),
-        note: "For a new project, initialize with --pro. For an already initialized Starwind UI project, run setup once before adding Pro blocks.",
-      };
-    }
-
-    return result;
   },
 };

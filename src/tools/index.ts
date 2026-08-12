@@ -4,56 +4,50 @@ import type { ZodRawShape } from "zod";
 import { starwindAddTool } from "./starwind_add_tool.js";
 import { starwindDocsTool } from "./starwind_docs_tool.js";
 import { starwindInitTool } from "./starwind_init_tool.js";
+import { starwindMigrateTool } from "./starwind_migrate_tool.js";
 import { starwindSearchTool } from "./starwind_search_tool.js";
 
-/**
- * Shape shared by every tool definition registered with the MCP server.
- */
-export interface ToolDefinition {
-  /** Unique tool name exposed to MCP clients. */
+type ToolDefinition = {
   name: string;
-  /** Human-readable description shown to clients. */
   description: string;
-  /** Zod raw shape describing the tool's input arguments. */
   inputSchema: ZodRawShape;
-  /** Executes the tool and returns an arbitrary JSON-serializable result. */
-  handler: (args: any) => Promise<unknown>;
-}
+  outputSchema?: ZodRawShape;
+  handler: (args: never) => Promise<unknown>;
+};
 
-/**
- * Collection of available tools, in registration order.
- */
 const tools: ToolDefinition[] = [
-  // Fetches live documentation from starwind.dev
-  starwindDocsTool,
-  // Generates validated install commands
-  starwindAddTool,
-  // Searches Starwind components and Pro blocks
-  starwindSearchTool,
-  // Dedicated project initialization
   starwindInitTool,
+  starwindAddTool,
+  starwindSearchTool,
+  starwindDocsTool,
+  starwindMigrateTool,
 ];
 
-/**
- * Register all tools on the high-level MCP server using `registerTool`.
- * @param server - The high-level `McpServer` instance.
- */
-export function setupTools(server: McpServer): void {
+export function registerTools(server: McpServer): void {
   for (const tool of tools) {
     server.registerTool(
       tool.name,
       {
         description: tool.description,
         inputSchema: tool.inputSchema,
+        outputSchema: tool.outputSchema,
       },
       async (args) => {
         try {
-          const result = await tool.handler(args);
+          const result = await tool.handler(args as never);
+
           return {
-            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+            structuredContent: { result },
           };
-        } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : "Unknown error";
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unknown tool error";
+
           return {
             content: [{ type: "text" as const, text: message }],
             isError: true,
@@ -63,3 +57,13 @@ export function setupTools(server: McpServer): void {
     );
   }
 }
+
+export const setupTools = registerTools;
+
+export {
+  starwindAddTool,
+  starwindDocsTool,
+  starwindInitTool,
+  starwindMigrateTool,
+  starwindSearchTool,
+};
