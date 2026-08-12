@@ -1,6 +1,7 @@
 import {
   getStarwindManifest,
   resetStarwindManifestCache,
+  type StarwindFramework,
   type StarwindMetadataSource,
 } from "./starwind_manifest.js";
 
@@ -10,7 +11,7 @@ export interface StandardComponentMetadata {
   description: string;
   docsUrl: string;
   markdownUrl: string;
-  implementationTargets: Array<"astro" | "react">;
+  implementationTargets: StarwindFramework[];
   publicImportPath: string;
   installCommand: string;
   aliases: string[];

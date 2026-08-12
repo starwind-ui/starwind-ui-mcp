@@ -54,7 +54,7 @@ The server validates these layers against the versioned [`ai-manifest.json`](htt
 | Tool | Purpose |
 | --- | --- |
 | `starwind_init` | Generate v3 initialization commands for an existing Astro or React project. Pro is opt-in. |
-| `starwind_add` | Validate and install styled components, primitives, or Astro-only Pro blocks. |
+| `starwind_add` | Validate requests and generate installation or deferred-install commands for styled components, primitives, or Astro-only Pro blocks. |
 | `starwind_search` | Search styled components, primitives, and Pro blocks with framework metadata and filters. |
 | `starwind_docs` | Resolve exact component, primitive, Runtime, migration, and framework documentation. |
 | `starwind_migrate` | Inspect a project and generate safe, interactive-first v2-to-v3 migration guidance. |
@@ -80,7 +80,7 @@ For an existing Astro project, the MCP recommends:
 pnpm dlx starwind@latest setup --yes
 ```
 
-The setup command auto-detects the project's package manager, so it does not need a `--package-manager` flag. It prepares the Pro registry and `.env.local`; replace the `STARWIND_LICENSE_KEY` placeholder with the purchased key, then run the returned `deferredCommand`. A project initialized with `pro: true` receives the equivalent `init --pro` command instead.
+The setup command auto-detects the project's package manager, so it does not need a `--package-manager` flag. It prepares the Pro registry and `.env.local`; replace the `STARWIND_LICENSE_KEY` placeholder with the purchased key, then run the returned `deferredCommand`. Treat the key as sensitive: keep `.env.local` out of source control and never expose the key in logs or client-side code. A project initialized with `pro: true` receives the equivalent `init --pro` command instead.
 
 ## Development
 

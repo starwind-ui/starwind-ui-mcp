@@ -41,6 +41,7 @@ describe("starwindDocsTool", () => {
       url: "https://starwind.dev/docs/getting-started/migration.md",
       metadataSource: "network",
       documentation: markdown,
+      full: false,
     });
   });
 
@@ -100,5 +101,43 @@ describe("starwindDocsTool", () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain(
       "https://starwind.dev/docs/components/custom setup.md",
     );
+  });
+
+  it("resolves a valid explicit component fallback without marking full requested", async () => {
+    const url = "https://starwind.dev/docs/components/custom-widget.md";
+    const fetchMock = mockDocs({ [url]: "# Custom Widget" });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await starwindDocsTool.handler({ topic: "custom-widget", surface: "component" });
+
+    expect(result).toMatchObject({ resultType: "page", pageType: "component", url, full: false });
+  });
+
+  it("rejects unsafe explicit-page slugs and uses the aggregate fallback", async () => {
+    const fetchMock = mockDocs();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await starwindDocsTool.handler({ topic: "../../secret", surface: "component" });
+
+    expect(result.resultType).toBe("filtered");
+    expect(result.url).toBe("https://starwind.dev/llms.txt");
+    expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain(
+      "https://starwind.dev/docs/components/../../secret.md",
+    );
+  });
+
+  it("preserves the rate-limit error instead of reporting a fetch failure", async () => {
+    vi.stubGlobal("fetch", mockDocs());
+
+    for (let index = 0; index < 10; index += 1) {
+      await starwindDocsTool.handler({
+        topic: `custom-${index}`,
+        surface: "component",
+      });
+    }
+
+    await expect(
+      starwindDocsTool.handler({ topic: "custom-over-limit", surface: "component" }),
+    ).rejects.toThrow("Rate limit exceeded");
   });
 });

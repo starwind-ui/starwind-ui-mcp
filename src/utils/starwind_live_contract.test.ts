@@ -16,7 +16,7 @@ liveDescribe("starwind.dev v3 live contract", () => {
     expect(manifest.components.length).toBeGreaterThanOrEqual(55);
     expect(manifest.layeredDocs.primitives.length).toBeGreaterThanOrEqual(36);
     expect(manifest.guides.some((guide) => guide.name.includes("migration"))).toBe(true);
-  });
+  }, 15_000);
 
   it("publishes plan and dependency metadata for the Pro catalog", async () => {
     resetStarwindProManifestCache();
@@ -29,5 +29,5 @@ liveDescribe("starwind.dev v3 live contract", () => {
     expect(
       manifest.blocks.some((block) => block.installCommand.trim().split(/\s+/).length > 4),
     ).toBe(true);
-  });
+  }, 15_000);
 });

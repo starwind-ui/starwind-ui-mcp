@@ -64,6 +64,22 @@ describe("starwindInitTool", () => {
     }
   });
 
+  it("routes a legacy config to migration guidance", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-init-legacy-"));
+    try {
+      writeFileSync(
+        join(cwd, "starwind.config.json"),
+        JSON.stringify({ framework: "astro", components: [] }),
+      );
+      const result = await starwindInitTool.handler({ cwd, packageManager: "npm" });
+      expect(result.warnings).toEqual(
+        expect.arrayContaining([expect.stringContaining("starwind_migrate")]),
+      );
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("allows explicitly requested paid Pro authorization for Astro", async () => {
     const result = await starwindInitTool.handler({
       cwd: "/project-that-does-not-exist",

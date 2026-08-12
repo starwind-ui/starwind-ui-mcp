@@ -1,4 +1,7 @@
-export const aiManifestFixture = {
+import type { StarwindManifest } from "../src/utils/starwind_manifest.js";
+import type { StarwindProManifest } from "../src/utils/starwind_pro_manifest.js";
+
+export const aiManifestFixture: StarwindManifest = {
   version: 2,
   runtimeCli: {
     configVersion: 2,
@@ -122,7 +125,7 @@ export const aiManifestFixture = {
   },
 };
 
-export const proManifestFixture = {
+export const proManifestFixture: StarwindProManifest = {
   version: "1",
   baseUrl: "https://pro.starwind.dev",
   totalBlocks: 2,
@@ -140,7 +143,7 @@ export const proManifestFixture = {
     },
     {
       id: "pricing-02",
-      name: "Pricing 01",
+      name: "Pricing 02",
       description: "A pricing comparison section.",
       categories: ["pricing"],
       keywords: ["plans"],

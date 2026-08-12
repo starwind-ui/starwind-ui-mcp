@@ -102,6 +102,7 @@ const GUIDE_ALIASES: Record<string, string> = {
   tanstack: "tanstack-start",
 };
 const FETCH_TIMEOUT_MS = 5000;
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 let docsCache = new DocsCache();
 let rateLimiter = new RateLimiter();
 
@@ -112,10 +113,10 @@ export function resetDocsToolState(): void {
 }
 
 async function fetchText(url: string): Promise<string | null> {
+  rateLimiter.record();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    rateLimiter.record();
     const response = await fetch(url, { signal: controller.signal });
     return response.ok ? await response.text() : null;
   } catch {
@@ -160,14 +161,14 @@ async function resolvePage(topic: string, surface: NonNullable<StarwindDocsArgs[
   if ((surface === "guide" || surface === "auto") && guide) {
     return { url: guide.markdownUrl, pageType: "guide" as const, source };
   }
-  if (surface === "component") {
+  if (surface === "component" && SLUG_PATTERN.test(normalized)) {
     return {
       url: `https://starwind.dev/docs/components/${normalized}.md`,
       pageType: "component" as const,
       source,
     };
   }
-  if (surface === "primitive") {
+  if (surface === "primitive" && SLUG_PATTERN.test(normalized)) {
     return {
       url: `https://starwind.dev/docs/primitives/${normalized}.md`,
       pageType: "primitive" as const,
@@ -237,7 +238,7 @@ export const starwindDocsTool = {
             url: page.url,
             topic: args.topic ?? topic,
             surface,
-            full: true,
+            full: args.full === true,
             pageType: page.pageType,
             metadataSource: page.source,
             cacheInfo: docsCache.info(key),

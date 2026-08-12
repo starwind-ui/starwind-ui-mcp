@@ -30,6 +30,8 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function hasProRegistryConfiguration(config: Record<string, unknown> | null): boolean {
+  // setup intentionally writes a ${STARWIND_LICENSE_KEY} reference here; the secret lives in
+  // .env.local, which project inspection does not read or expose.
   const pro = asRecord(config?.pro);
   const registry = asRecord(pro?.registry);
   const headers = asRecord(registry?.headers);
@@ -43,7 +45,7 @@ function hasProRegistryConfiguration(config: Record<string, unknown> | null): bo
 
 function readJson(path: string): Record<string, unknown> | null {
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    return asRecord(JSON.parse(readFileSync(path, "utf8")));
   } catch {
     return null;
   }

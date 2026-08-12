@@ -66,6 +66,7 @@ function suggestionsFor(value: string, available: string[]): string[] {
 }
 
 function parseProInstallItems(command: string, expectedBlock: string): string[] | null {
+  // The published manifest uses this exact canonical prefix; strict parsing keeps remote data fail-closed.
   const tokens = command.trim().split(/\s+/);
   if (tokens[0] !== "npx" || tokens[1] !== "starwind@latest" || tokens[2] !== "add") return null;
   const items = tokens.slice(3);
@@ -80,7 +81,10 @@ export const starwindAddTool = {
   description:
     "Generates validated Starwind UI v3 install commands for styled components, vendored primitives, or Starwind Pro blocks, with optional Astro or React targeting.",
   inputSchema: {
-    components: z.array(z.string()).describe("Names to install, or a single 'all'/'--all' item."),
+    components: z
+      .array(z.string())
+      .min(1, "At least one component must be specified")
+      .describe("Names to install, or a single 'all'/'--all' item."),
     surface: z.enum(["styled", "primitive"]).optional().describe("Defaults to styled."),
     framework: z.enum(["astro", "react"]).optional().describe("Optional framework override."),
     to: z.string().optional().describe("Primitive destination passed to --to."),
@@ -95,10 +99,16 @@ export const starwindAddTool = {
   },
 
   async handler(args: StarwindAddArgs): Promise<Record<string, unknown>> {
-    if (!args.components?.length) throw new Error("At least one component must be specified");
+    if (!args.components?.length) {
+      return { success: false, error: "At least one component must be specified" };
+    }
 
     const surface = args.surface ?? "styled";
     const normalized = args.components.map(normalize);
+    const installAll = normalized.some(isAll);
+    if (installAll && normalized.length > 1) {
+      return { success: false, error: "Use 'all' by itself instead of mixing it with named items" };
+    }
     const unsafe = normalized.filter(
       (value) => !isAll(value) && !ITEM_PATTERN.test(value) && !PRO_BLOCK_PATTERN.test(value),
     );
@@ -142,10 +152,6 @@ export const starwindAddTool = {
       getStarwindManifest(),
       proMetadataPromise,
     ]);
-    const installAll = normalized.some(isAll);
-    if (installAll && normalized.length > 1) {
-      return { success: false, error: "Use 'all' by itself instead of mixing it with named items" };
-    }
 
     const available =
       surface === "styled"
@@ -240,7 +246,10 @@ export const starwindAddTool = {
     const needsProGuidance = paidAuthorizationRequested || paidBlocks.length > 0;
     const upgradeRequired = needsProGuidance && !project.proRegistryConfigured;
     const setupCommand = args.init
-      ? getInitCommand(dlx, { framework: args.framework, pro: true })
+      ? getInitCommand(dlx, {
+          framework: args.framework,
+          pro: upgradeRequired || paidAuthorizationRequested,
+        })
       : getExistingProjectProSetupCommand(dlx);
     const commands: string[] = [];
     let command: string;

@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -15,7 +19,10 @@ function mockManifests(proValue: unknown = proManifestFixture) {
 }
 
 describe("starwindSearchTool", () => {
-  beforeEach(() => resetStarwindSearchToolState());
+  beforeEach(() => {
+    resetStarwindSearchToolState();
+    vi.stubGlobal("fetch", mockManifests());
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     resetStarwindSearchToolState();
@@ -77,6 +84,40 @@ describe("starwindSearchTool", () => {
       setupCommand: "npx starwind@latest setup --yes",
       licenseEnvironmentVariable: "STARWIND_LICENSE_KEY",
     });
+  });
+
+  it("recognizes existing Pro setup when returning paid results", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-search-pro-"));
+    try {
+      writeFileSync(join(cwd, "package.json"), JSON.stringify({ dependencies: { astro: "^6" } }));
+      writeFileSync(
+        join(cwd, "starwind.config.json"),
+        JSON.stringify({
+          version: 2,
+          framework: "astro",
+          pro: { registry: { headers: { Authorization: "Bearer ${STARWIND_LICENSE_KEY}" } } },
+        }),
+      );
+      const result = await starwindSearchTool.handler({ query: "pricing", plan: "pro", cwd });
+      expect(result.proUpgrade).toMatchObject({ required: false, status: "configured" });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("omits a malformed Pro preview URL without losing other results", async () => {
+    const malformed = structuredClone(proManifestFixture);
+    malformed.blocks[0].previewUrl = "https://[invalid";
+    vi.stubGlobal("fetch", mockManifests(malformed));
+    const result = await starwindSearchTool.handler({ query: "hero" });
+    expect(result.proBlocks.results).toHaveLength(1);
+    expect(result.proBlocks.results[0].previewUrl).toBeUndefined();
+  });
+
+  it("reports no additional page beyond an out-of-range offset", async () => {
+    const result = await starwindSearchTool.handler({ category: "pricing", offset: 10 });
+    expect(result.proBlocks.results).toEqual([]);
+    expect(result.proBlocks.pagination.hasMore).toBe(false);
   });
 
   it("keeps core results when the Pro manifest is malformed", async () => {

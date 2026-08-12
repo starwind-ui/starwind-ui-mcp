@@ -40,4 +40,18 @@ describe("inspectStarwindProject", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
+
+  it("does not treat valid non-object JSON as project configuration", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-project-invalid-json-shape-"));
+    try {
+      writeFileSync(join(cwd, "package.json"), "[]");
+      writeFileSync(join(cwd, "starwind.config.json"), '"text"');
+      const context = inspectStarwindProject(cwd);
+      expect(context.packageJsonFound).toBe(false);
+      expect(context.starwindConfigFound).toBe(false);
+      expect(context.configVersion).toBeNull();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 });

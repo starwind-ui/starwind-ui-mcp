@@ -33,15 +33,19 @@ export const starwindMigrateTool = {
       ? { name: args.packageManager, source: "user-specified" as const }
       : { ...detectPackageManager({ cwd }), source: "detected" as const };
     const flags = args.yes ? ` --yes --package-manager ${pmInfo.name}` : "";
+    const applicable = project.configVersion === 1;
+    // Interactive migration lets the CLI auto-detect; non-interactive mode pins the detected manager.
 
     return {
-      success: true,
-      command: `${getDlxCommand(pmInfo.name)} starwind@latest migrate${flags}`,
+      success: applicable,
+      ...(applicable
+        ? { command: `${getDlxCommand(pmInfo.name)} starwind@latest migrate${flags}` }
+        : {}),
       interactive: args.yes !== true,
       packageManager: pmInfo.name,
       packageManagerSource: pmInfo.source,
       project,
-      applicable: project.configVersion === 1,
+      applicable,
       warnings: [
         "Confirm the Git working tree is clean and recoverable before migrating.",
         "Run the project's build, typecheck, and tests before and after migration.",

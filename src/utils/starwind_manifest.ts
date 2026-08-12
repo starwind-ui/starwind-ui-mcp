@@ -287,16 +287,11 @@ function buildFallbackManifest(): StarwindManifest {
   });
 }
 
+const FALLBACK_MANIFEST: StarwindManifest = Object.freeze(buildFallbackManifest());
 let manifestCache: ManifestCache | null = null;
 
-async function fetchWithTimeout(url: string): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
+function fetchWithTimeout(url: string): Promise<Response> {
+  return fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 }
 
 export async function getStarwindManifest(): Promise<{
@@ -317,9 +312,8 @@ export async function getStarwindManifest(): Promise<{
       manifestCache.expiresAt = Date.now() + RETRY_TTL_MS;
       return { manifest: manifestCache.manifest, source: "cache" };
     }
-    const manifest = buildFallbackManifest();
-    manifestCache = { manifest, expiresAt: Date.now() + RETRY_TTL_MS };
-    return { manifest, source: "fallback" };
+    manifestCache = { manifest: FALLBACK_MANIFEST, expiresAt: Date.now() + RETRY_TTL_MS };
+    return { manifest: FALLBACK_MANIFEST, source: "fallback" };
   }
 }
 

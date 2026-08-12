@@ -32,6 +32,18 @@ describe("starwindAddTool", () => {
     resetAddToolState();
   });
 
+  it("returns a structured error for an empty component list", async () => {
+    const result = await starwindAddTool.handler({ components: [] });
+    expect(result).toEqual({ success: false, error: "At least one component must be specified" });
+  });
+
+  it("rejects a mixed all request before loading manifests", async () => {
+    const fetchMock = mockManifests();
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await starwindAddTool.handler({ components: ["all", "button"] });
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining("by itself") });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("generates deterministic package-manager and framework flags", async () => {
     const result = await starwindAddTool.handler({
       components: ["button"],
@@ -229,10 +241,15 @@ describe("starwindAddTool", () => {
       const result = await starwindAddTool.handler({
         components: ["@starwind-pro/pricing-02"],
         cwd,
+        init: true,
         packageManager: "npm",
       });
 
       expect(result.command).toContain("add @starwind-pro/pricing-02");
+      expect((result.commands as string[])[0]).toBe("npx starwind@latest init --defaults");
+      expect((result.proUpgrade as Record<string, unknown>).setupCommand).toBe(
+        (result.commands as string[])[0],
+      );
       expect(result.deferredCommand).toBeUndefined();
       expect(result.project).toMatchObject({ proRegistryConfigured: true });
       expect(result.proUpgrade).toMatchObject({

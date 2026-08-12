@@ -39,10 +39,10 @@ export async function getStarwindProManifest(): Promise<{
     return { manifest: cache.manifest, source: "cache" };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(PRO_MANIFEST_URL, { signal: controller.signal });
+    const response = await fetch(PRO_MANIFEST_URL, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const manifest = proManifestSchema.parse(await response.json());
     cache = { manifest, expiresAt: Date.now() + CACHE_TTL_MS };
@@ -53,8 +53,6 @@ export async function getStarwindProManifest(): Promise<{
       return { manifest: cache.manifest, source: "cache" };
     }
     throw error;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

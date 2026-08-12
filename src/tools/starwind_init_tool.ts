@@ -61,7 +61,9 @@ export const starwindInitTool = {
     const command = getInitCommand(dlxCommand, { framework: args.framework, pro: isPro });
     const warnings: string[] = [];
     if (!nodeMeetsV3Requirement(project.nodeVersion)) {
-      warnings.push(`Starwind UI v3 requires Node.js >=22.12.0; detected ${project.nodeVersion}.`);
+      warnings.push(
+        `Starwind UI v3 requires Node.js >=22.12.0. The MCP server runs on ${project.nodeVersion}; confirm the Node.js version in the project shell.`,
+      );
     }
     if (!project.packageJsonFound)
       warnings.push("Run this from an existing Astro or React project root.");

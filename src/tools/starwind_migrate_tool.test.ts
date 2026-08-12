@@ -31,8 +31,23 @@ describe("starwindMigrateTool", () => {
   it("does not label a missing config as migratable", async () => {
     const result = await starwindMigrateTool.handler({ cwd, packageManager: "npm" });
     expect(result.applicable).toBe(false);
+    expect(result.success).toBe(false);
+    expect(result.command).toBeUndefined();
     expect(result.warnings).toEqual(
       expect.arrayContaining([expect.stringContaining("No Starwind config")]),
+    );
+  });
+
+  it("does not expose a migration command for an existing v2 config", async () => {
+    writeFileSync(
+      join(cwd, "starwind.config.json"),
+      JSON.stringify({ version: 2, framework: "astro", components: [] }),
+    );
+    const result = await starwindMigrateTool.handler({ cwd, packageManager: "pnpm" });
+    expect(result).toMatchObject({ success: false, applicable: false });
+    expect(result.command).toBeUndefined();
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining("v2 Runtime config")]),
     );
   });
 

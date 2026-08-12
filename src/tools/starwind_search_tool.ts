@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { inspectStarwindProject } from "../utils/project_context.js";
 import {
   getStarwindManifest,
   resetStarwindManifestCache,
@@ -16,6 +17,7 @@ import {
 
 export interface StarwindSearchArgs {
   query?: string;
+  cwd?: string;
   surface?: "styled" | "primitive" | "all";
   framework?: StarwindFramework | "all";
   category?: string;
@@ -118,6 +120,14 @@ function scorePro(block: StarwindProBlock, query: string): number {
   );
 }
 
+function resolvePreviewUrl(previewUrl: string, baseUrl: string): string | null {
+  try {
+    return new URL(previewUrl, baseUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
 export function resetStarwindSearchToolState(): void {
   resetStarwindProManifestCache();
   resetStarwindManifestCache();
@@ -130,6 +140,7 @@ export const starwindSearchTool = {
   inputSchema: {
     query: z.string().optional(),
     surface: z.enum(["styled", "primitive", "all"]).optional().describe("Defaults to all."),
+    cwd: z.string().optional().describe("Project directory used to detect existing Pro setup."),
     framework: z.enum(["astro", "react", "all"]).optional(),
     plan: z.enum(["free", "pro"]).optional(),
     category: z.string().optional(),
@@ -147,6 +158,7 @@ export const starwindSearchTool = {
     const limit = Math.min(Math.max(1, Math.floor(args.limit ?? DEFAULT_LIMIT)), MAX_LIMIT);
     const offset = Math.max(0, Math.floor(args.offset ?? 0));
     const metadataPromise = getStarwindManifest();
+    const project = inspectStarwindProject(args.cwd ?? process.cwd());
     const shouldSearchPro = surface !== "primitive" && framework !== "react";
     const proPromise = shouldSearchPro
       ? getStarwindProManifest()
@@ -188,27 +200,30 @@ export const starwindSearchTool = {
     }
     const pagedPro = proMatches.slice(offset, offset + limit);
     const proResults = pro.ok
-      ? pagedPro.map((block) => ({
-          id: block.id,
-          name: block.name,
-          description: block.description,
-          categories: block.categories,
-          plan: block.plan,
-          frameworkSupport: ["astro"],
-          paidAuthorizationRequired: block.plan === "pro",
-          ...(block.plan === "free"
-            ? {
-                installCommand: block.installCommand.includes("--yes")
-                  ? block.installCommand
-                  : `${block.installCommand} --yes`,
-              }
-            : {
-                deferredInstallCommand: block.installCommand.includes("--yes")
-                  ? block.installCommand
-                  : `${block.installCommand} --yes`,
-              }),
-          previewUrl: new URL(block.previewUrl, pro.manifest.baseUrl).toString(),
-        }))
+      ? pagedPro.map((block) => {
+          const previewUrl = resolvePreviewUrl(block.previewUrl, pro.manifest.baseUrl);
+          return {
+            id: block.id,
+            name: block.name,
+            description: block.description,
+            categories: block.categories,
+            plan: block.plan,
+            frameworkSupport: ["astro"],
+            paidAuthorizationRequired: block.plan === "pro",
+            ...(block.plan === "free"
+              ? {
+                  installCommand: block.installCommand.includes("--yes")
+                    ? block.installCommand
+                    : `${block.installCommand} --yes`,
+                }
+              : {
+                  deferredInstallCommand: block.installCommand.includes("--yes")
+                    ? block.installCommand
+                    : `${block.installCommand} --yes`,
+                }),
+            ...(previewUrl ? { previewUrl } : {}),
+          };
+        })
       : [];
     const paidResults = proResults.filter((block) => block.plan === "pro");
     const totalMatches = styledResults.length + primitiveResults.length + proMatches.length;
@@ -241,7 +256,11 @@ export const starwindSearchTool = {
         totalMatches: proMatches.length,
         resultsReturned: proResults.length,
         availableCategories: pro.ok ? pro.manifest.categories : [],
-        pagination: { limit, offset, hasMore: offset + proResults.length < proMatches.length },
+        pagination: {
+          limit,
+          offset,
+          hasMore: proResults.length > 0 && offset + proResults.length < proMatches.length,
+        },
         results: proResults,
         ...(pro.ok && proResults.length && paidResults.length === 0
           ? { note: "Free Pro catalog blocks install after ordinary Starwind initialization." }
@@ -255,7 +274,7 @@ export const starwindSearchTool = {
               reason: `Paid authorization is required for: ${paidResults
                 .map((block) => block.id)
                 .join(", ")}.`,
-              configured: false,
+              configured: project.proRegistryConfigured,
             }),
           }
         : shouldSearchPro && pro.ok
