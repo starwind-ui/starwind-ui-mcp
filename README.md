@@ -7,6 +7,12 @@
   <a href="https://github.com/starwind-ui/starwind-ui-mcp"><img alt="GitHub stars" src="https://shieldcn.dev/github/starwind-ui/starwind-ui-mcp/stars.svg" /></a>
 </p>
 
+<p align="center">
+  <a href="https://registry.modelcontextprotocol.io/?search=io.github.starwind-ui%2Fmcp">Official MCP Registry</a>
+  ·
+  <code>io.github.starwind-ui/mcp</code>
+</p>
+
 A TypeScript Model Context Protocol server for [Starwind UI v3](https://starwind.dev/) and [Starwind Pro](https://pro.starwind.dev/). It gives AI clients current, framework-aware guidance for Astro and React projects.
 
 ## Quick start
@@ -36,6 +42,10 @@ Claude Code (`.mcp.json`) or Cursor (`.cursor/mcp.json`):
 ```
 
 Restart the client or reload its MCP servers after changing the configuration.
+
+## Official MCP Registry
+
+The server will be published under `io.github.starwind-ui/mcp`. The registry entry points to the public `@starwind-ui/mcp` npm package and uses the same `stdio` transport shown in the client configuration examples.
 
 ## v3 model
 
