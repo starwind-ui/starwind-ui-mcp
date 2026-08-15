@@ -43,10 +43,6 @@ Claude Code (`.mcp.json`) or Cursor (`.cursor/mcp.json`):
 
 Restart the client or reload its MCP servers after changing the configuration.
 
-## Official MCP Registry
-
-The server will be published under `io.github.starwind-ui/mcp`. The registry entry points to the public `@starwind-ui/mcp` npm package and uses the same `stdio` transport shown in the client configuration examples.
-
 ## v3 model
 
 Starwind UI v3 has three related surfaces. The MCP keeps them distinct:
