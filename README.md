@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="https://registry.modelcontextprotocol.io/?search=io.github.starwind-ui%2Fmcp">Official MCP Registry</a>
+  <a href="https://registry.modelcontextprotocol.io/?q=io.github.starwind-ui%2Fmcp">Official MCP Registry</a>
   ·
   <code>io.github.starwind-ui/mcp</code>
 </p>
