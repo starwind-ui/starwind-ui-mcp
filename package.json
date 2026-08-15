@@ -1,7 +1,9 @@
 {
   "name": "@starwind-ui/mcp",
   "version": "0.5.0",
-  "description": "The Starwind UI MCP Server",
+  "description": "Framework-aware Starwind UI v3 tools for Astro and React setup, components, docs, and migration.",
+  "mcpName": "io.github.starwind-ui/mcp",
+  "homepage": "https://starwind.dev/docs/getting-started/mcp/",
   "type": "module",
   "main": "dist/server.js",
   "bin": {
@@ -16,19 +18,30 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
     "model-context-protocol",
     "starwind",
-    "starwind ui",
-    "starwind mcp",
+    "starwind-ui",
+    "starwind-pro",
     "astro",
-    "cursor",
+    "react",
+    "components",
+    "ui-components",
+    "runtime",
+    "documentation",
+    "migration",
+    "developer-tools",
+    "ai-agents",
+    "coding-agents",
+    "codex",
     "claude",
+    "cursor",
     "windsurf",
-    "ai-tools"
+    "typescript"
   ],
   "author": {
-    "name": "webreaper",
-    "url": "https://x.com/boston343builds"
+    "name": "boston343",
+    "url": "https://github.com/boston343"
   },
   "license": "MIT",
   "scripts": {
