@@ -1,5 +1,11 @@
 # @starwind-ui/mcp
 
+## 0.5.1
+
+### Patch Changes
+
+- 729b22c: Add official MCP Registry ownership metadata and improve npm discovery metadata.
+
 ## 0.5.0
 
 ### Minor Changes

@@ -1,6 +1,6 @@
 {
   "name": "@starwind-ui/mcp",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Framework-aware Starwind UI v3 tools for Astro and React setup, components, docs, and migration.",
   "mcpName": "io.github.starwind-ui/mcp",
   "homepage": "https://starwind.dev/docs/getting-started/mcp/",
