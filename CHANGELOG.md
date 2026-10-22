@@ -1,5 +1,11 @@
 # @starwind-ui/mcp
 
+## 0.5.2
+
+### Patch Changes
+
+- Update the MCP SDK to 1.32.1 to include upstream security fixes. Refresh runtime dependencies and development tools to current compatible releases.
+
 ## 0.5.1
 
 ### Patch Changes

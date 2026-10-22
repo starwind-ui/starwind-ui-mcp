@@ -3,7 +3,7 @@
   "name": "io.github.starwind-ui/mcp",
   "title": "Starwind UI MCP Server",
   "description": "Framework-aware Starwind UI v3 tools for Astro and React setup, components, docs, and migration.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "websiteUrl": "https://starwind.dev/docs/getting-started/mcp/",
   "repository": {
     "url": "https://github.com/starwind-ui/starwind-ui-mcp",
@@ -14,7 +14,7 @@
     {
       "registryType": "npm",
       "identifier": "@starwind-ui/mcp",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "transport": {
         "type": "stdio"
       }
