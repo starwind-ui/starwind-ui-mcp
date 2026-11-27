@@ -10,9 +10,14 @@ import {
 import {
   getStarwindManifest,
   resetStarwindManifestCache,
+  STARWIND_FRAMEWORKS,
   type StarwindFramework,
 } from "../utils/starwind_manifest.js";
-import { getProDiscovery, getProUpgrade } from "../utils/starwind_pro_guidance.js";
+import {
+  getProDiscovery,
+  getProFrameworkWarning,
+  getProUpgrade,
+} from "../utils/starwind_pro_guidance.js";
 import {
   getStarwindProManifest,
   resetStarwindProManifestCache,
@@ -79,14 +84,17 @@ function parseProInstallItems(command: string, expectedBlock: string): string[] 
 export const starwindAddTool = {
   name: "starwind_add",
   description:
-    "Generates validated Starwind UI v3 install commands for styled components, vendored primitives, or Starwind Pro blocks, with optional Astro or React targeting.",
+    "Generates validated Starwind UI v3 install commands for styled components, vendored primitives, or Starwind Pro blocks, with optional Astro, React, Vue, or Svelte targeting. Pro blocks install in every framework and are Astro components.",
   inputSchema: {
     components: z
       .array(z.string())
       .min(1, "At least one component must be specified")
       .describe("Names to install, or a single 'all'/'--all' item."),
     surface: z.enum(["styled", "primitive"]).optional().describe("Defaults to styled."),
-    framework: z.enum(["astro", "react"]).optional().describe("Optional framework override."),
+    framework: z
+      .enum(STARWIND_FRAMEWORKS)
+      .optional()
+      .describe("Optional framework override: astro, react, vue, or svelte."),
     to: z.string().optional().describe("Primitive destination passed to --to."),
     overwrite: z.boolean().optional().describe("Allow the CLI to overwrite existing files."),
     init: z.boolean().optional().describe("Prepend project initialization for a new setup."),
@@ -128,16 +136,13 @@ export const starwindAddTool = {
     }
 
     const cwd = args.cwd ?? process.cwd();
-    const project = inspectStarwindProject(cwd);
+    const project = inspectStarwindProject(cwd, { packageDocs: args.cwd !== undefined });
     const effectiveFramework =
       args.framework ?? project.configuredFramework ?? project.detectedFramework;
-    if (effectiveFramework === "react" && (proBlocks.length || args.pro === true)) {
-      return {
-        success: false,
-        error: "Starwind Pro blocks and paid authorization currently target Astro, not React",
-        project,
-      };
-    }
+    const proFrameworkWarning =
+      proBlocks.length || args.pro === true
+        ? getProFrameworkWarning(effectiveFramework)
+        : undefined;
 
     const pmInfo = args.packageManager
       ? { name: args.packageManager, source: "user-specified" as const }
@@ -326,6 +331,7 @@ export const starwindAddTool = {
         : proBlocks.length
           ? { proDiscovery: getProDiscovery(dlx) }
           : {}),
+      ...(proFrameworkWarning ? { proFrameworkWarning } : {}),
     };
   },
 };

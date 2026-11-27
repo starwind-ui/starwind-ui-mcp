@@ -1,19 +1,62 @@
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 
+import { isStarwindFramework, type StarwindFramework } from "./starwind_manifest.js";
+
+/** Host kinds match the Starwind framework installation guide slugs. */
+export type StarwindHost =
+  | "astro"
+  | "nextjs"
+  | "react-router"
+  | "tanstack-start"
+  | "vite-react"
+  | "laravel-inertia-vue"
+  | "nuxt"
+  | "quasar"
+  | "vite-vue"
+  | "sveltekit"
+  | "vite-svelte";
+
+export type StarwindIslandFramework = Exclude<StarwindFramework, "astro">;
+
+export interface StarwindPackageDocs {
+  packageName: string;
+  packageVersion: string | null;
+  docsDir: string;
+  llmsTxt: string;
+  readme: string | null;
+}
+
 export interface StarwindProjectContext {
   cwd: string;
   nodeVersion: string;
   packageJsonFound: boolean;
-  detectedFramework: "astro" | "react" | null;
+  detectedFramework: StarwindFramework | null;
+  detectedHost: StarwindHost | null;
+  astroIslandFrameworks: StarwindIslandFramework[];
   starwindConfigFound: boolean;
   configVersion: number | null;
   configVersionInvalid: boolean;
-  configuredFramework: "astro" | "react" | null;
+  configuredFramework: StarwindFramework | null;
   componentDir: string | null;
+  componentDirs: Partial<Record<StarwindFramework, string>> | null;
   installedComponentCount: number | null;
   proRegistryConfigured: boolean;
+  packageDocs: StarwindPackageDocs[];
 }
+
+export interface InspectStarwindProjectOptions {
+  /** Read node_modules for installed package docs. Tools enable this only for an explicit cwd. */
+  packageDocs?: boolean;
+}
+
+export const STARWIND_DOCS_PACKAGES = [
+  "@starwind-ui/runtime",
+  "@starwind-ui/astro",
+  "@starwind-ui/react",
+  "@starwind-ui/vue",
+  "@starwind-ui/svelte",
+] as const;
 
 const ASTRO_CONFIG_FILES = [
   "astro.config.mjs",
@@ -22,6 +65,20 @@ const ASTRO_CONFIG_FILES = [
   "astro.config.mts",
   "astro.config.cjs",
   "astro.config.cts",
+] as const;
+
+const QUASAR_CONFIG_FILES = [
+  "quasar.config.ts",
+  "quasar.config.js",
+  "quasar.config.mjs",
+  "quasar.config.cjs",
+] as const;
+
+const REACT_ROUTER_CONFIG_FILES = [
+  "react-router.config.ts",
+  "react-router.config.js",
+  "react-router.config.mjs",
+  "react-router.config.mts",
 ] as const;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -52,24 +109,117 @@ function readJson(path: string): Record<string, unknown> | null {
   }
 }
 
-export function inspectStarwindProject(cwd = process.cwd()): StarwindProjectContext {
+function getDependencies(packageJson: Record<string, unknown> | null): Record<string, unknown> {
+  // Same precedence as the Starwind CLI host planner.
+  return {
+    ...(asRecord(packageJson?.peerDependencies) ?? {}),
+    ...(asRecord(packageJson?.optionalDependencies) ?? {}),
+    ...(asRecord(packageJson?.devDependencies) ?? {}),
+    ...(asRecord(packageJson?.dependencies) ?? {}),
+  };
+}
+
+function anyFile(cwd: string, files: readonly string[]): boolean {
+  return files.some((file) => existsSync(resolve(cwd, file)));
+}
+
+interface HostDetection {
+  framework: StarwindFramework | null;
+  host: StarwindHost | null;
+  islands: StarwindIslandFramework[];
+}
+
+/**
+ * Mirrors the Starwind CLI host order with cheap package and file signals: Astro first, then a
+ * Svelte host, then a Vue host, then a React host. A stray Vue or Svelte dependency does not
+ * replace a React host unless the matching Vite plugin or meta-framework is declared.
+ */
+function detectHost(cwd: string, deps: Record<string, unknown>): HostDetection {
+  const has = (name: string) => Boolean(deps[name]);
+
+  if (has("astro") || anyFile(cwd, ASTRO_CONFIG_FILES)) {
+    const islands: StarwindIslandFramework[] = [];
+    if (has("@astrojs/react") || has("react") || has("react-dom")) islands.push("react");
+    if (has("@astrojs/vue") || has("vue")) islands.push("vue");
+    if (has("@astrojs/svelte") || has("svelte")) islands.push("svelte");
+    return { framework: "astro", host: "astro", islands };
+  }
+
+  if (has("@sveltejs/kit")) return { framework: "svelte", host: "sveltekit", islands: [] };
+  if (has("svelte") && has("@sveltejs/vite-plugin-svelte")) {
+    return { framework: "svelte", host: "vite-svelte", islands: [] };
+  }
+
+  if (has("vue") && has("@inertiajs/vue3")) {
+    return { framework: "vue", host: "laravel-inertia-vue", islands: [] };
+  }
+  if (has("nuxt")) return { framework: "vue", host: "nuxt", islands: [] };
+  if (has("@quasar/app-vite") || anyFile(cwd, QUASAR_CONFIG_FILES)) {
+    return { framework: "vue", host: "quasar", islands: [] };
+  }
+  if (has("vue") && has("@vitejs/plugin-vue")) {
+    return { framework: "vue", host: "vite-vue", islands: [] };
+  }
+
+  if (has("react") || has("react-dom")) {
+    const host: StarwindHost = has("next")
+      ? "nextjs"
+      : has("@tanstack/react-start")
+        ? "tanstack-start"
+        : has("@react-router/dev") || anyFile(cwd, REACT_ROUTER_CONFIG_FILES)
+          ? "react-router"
+          : "vite-react";
+    return { framework: "react", host, islands: [] };
+  }
+
+  if (has("svelte")) return { framework: "svelte", host: null, islands: [] };
+  if (has("vue")) return { framework: "vue", host: null, islands: [] };
+  return { framework: null, host: null, islands: [] };
+}
+
+function readComponentDirs(
+  config: Record<string, unknown> | null,
+): Partial<Record<StarwindFramework, string>> | null {
+  const dirs = asRecord(config?.componentDirs);
+  if (!dirs) return null;
+  const entries = Object.entries(dirs).filter(
+    (entry): entry is [StarwindFramework, string] =>
+      isStarwindFramework(entry[0]) && typeof entry[1] === "string" && entry[1].length > 0,
+  );
+  return entries.length ? Object.fromEntries(entries) : null;
+}
+
+/** Lists installed Starwind packages that ship version-matched docs (1.6.0 and newer). */
+export function findStarwindPackageDocs(cwd: string): StarwindPackageDocs[] {
+  return STARWIND_DOCS_PACKAGES.flatMap((packageName) => {
+    const packageDir = resolve(cwd, "node_modules", packageName);
+    const docsDir = resolve(packageDir, "docs");
+    const llmsTxt = resolve(docsDir, "llms.txt");
+    if (!existsSync(llmsTxt)) return [];
+    const readme = resolve(docsDir, "README.md");
+    const version = readJson(resolve(packageDir, "package.json"))?.version;
+    return [
+      {
+        packageName,
+        packageVersion: typeof version === "string" ? version : null,
+        docsDir,
+        llmsTxt,
+        readme: existsSync(readme) ? readme : null,
+      },
+    ];
+  });
+}
+
+export function inspectStarwindProject(
+  cwd = process.cwd(),
+  options: InspectStarwindProjectOptions = {},
+): StarwindProjectContext {
   const packagePath = resolve(cwd, "package.json");
   const configPath = resolve(cwd, "starwind.config.json");
   const packageJson = existsSync(packagePath) ? readJson(packagePath) : null;
   const config = existsSync(configPath) ? readJson(configPath) : null;
-  const dependencies = {
-    ...((packageJson?.dependencies as Record<string, unknown> | undefined) ?? {}),
-    ...((packageJson?.devDependencies as Record<string, unknown> | undefined) ?? {}),
-  };
-  const hasAstroConfig = ASTRO_CONFIG_FILES.some((file) => existsSync(resolve(cwd, file)));
-  const detectedFramework =
-    dependencies.astro || hasAstroConfig
-      ? "astro"
-      : dependencies.react || dependencies["react-dom"]
-        ? "react"
-        : null;
-  const configuredFramework =
-    config?.framework === "astro" || config?.framework === "react" ? config.framework : null;
+  const detection = detectHost(cwd, getDependencies(packageJson));
+  const configuredFramework = isStarwindFramework(config?.framework) ? config.framework : null;
   const components = config?.components;
   const hasConfigVersion = config !== null && "version" in config;
   const configVersionInvalid = hasConfigVersion && typeof config.version !== "number";
@@ -80,13 +230,17 @@ export function inspectStarwindProject(cwd = process.cwd()): StarwindProjectCont
     cwd,
     nodeVersion: process.versions.node,
     packageJsonFound: packageJson !== null,
-    detectedFramework,
+    detectedFramework: detection.framework,
+    detectedHost: detection.host,
+    astroIslandFrameworks: detection.islands,
     starwindConfigFound: config !== null,
     configVersion,
     configVersionInvalid,
     configuredFramework,
     componentDir: typeof config?.componentDir === "string" ? config.componentDir : null,
+    componentDirs: readComponentDirs(config),
     installedComponentCount: Array.isArray(components) ? components.length : null,
     proRegistryConfigured: hasProRegistryConfiguration(config),
+    packageDocs: options.packageDocs ? findStarwindPackageDocs(cwd) : [],
   };
 }

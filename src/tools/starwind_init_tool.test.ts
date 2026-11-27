@@ -24,25 +24,88 @@ describe("starwindInitTool", () => {
     });
   });
 
-  it("supports an explicit React target without paid Pro", async () => {
+  it("supports an explicit React target and keeps Pro discoverable with a warning", async () => {
     const result = await starwindInitTool.handler({
       cwd: "/project-that-does-not-exist",
       packageManager: "npm",
       framework: "react",
     });
     expect(result.command).toBe("npx starwind@latest init --defaults --framework react");
-    expect(result.proDiscovery).toBeUndefined();
+    expect(result.proDiscovery).toMatchObject({ setupCommand: "npx starwind@latest setup --yes" });
+    expect(result.proFrameworkWarning).toContain("Astro components");
+    expect(result.warnings).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("Astro components")]),
+    );
   });
 
-  it("rejects paid Pro setup for React", async () => {
+  it("allows paid Pro setup for React with the Astro components warning", async () => {
     const result = await starwindInitTool.handler({
       cwd: "/project-that-does-not-exist",
       packageManager: "npm",
       framework: "react",
       pro: true,
     });
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("target Astro");
+    expect(result.success).toBe(true);
+    expect(result.command).toBe("npx starwind@latest init --defaults --framework react --pro");
+    expect(result.proUpgrade).toMatchObject({
+      required: true,
+      setupCommand: "npx starwind@latest init --defaults --framework react --pro",
+    });
+    expect(result.proFrameworkWarning).toContain("Astro components");
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining("Astro components")]),
+    );
+  });
+
+  it.each([
+    ["vue", "Vue >=3.5.21"],
+    ["svelte", "Svelte >=5.29.0 <6"],
+  ] as const)("generates %s init commands and reports %s", async (framework, requirement) => {
+    const result = await starwindInitTool.handler({
+      cwd: "/project-that-does-not-exist",
+      packageManager: "pnpm",
+      framework,
+    });
+    expect(result).toMatchObject({
+      success: true,
+      command: `pnpm dlx starwind@latest init --defaults --framework ${framework}`,
+      framework,
+      frameworkSource: "user-specified",
+    });
+    expect((result.requirements as { framework: string }).framework).toContain(requirement);
+    expect(result.proDiscovery).toBeDefined();
+    expect(result.proFrameworkWarning).toContain("Astro components");
+
+    const pro = await starwindInitTool.handler({
+      cwd: "/project-that-does-not-exist",
+      packageManager: "pnpm",
+      framework,
+      pro: true,
+    });
+    expect(pro.success).toBe(true);
+    expect(pro.command).toBe(
+      `pnpm dlx starwind@latest init --defaults --framework ${framework} --pro`,
+    );
+  });
+
+  it("reads a Vue or Svelte framework from starwind.config.json", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-init-vue-config-"));
+    try {
+      writeFileSync(
+        join(cwd, "package.json"),
+        JSON.stringify({ dependencies: { vue: "^3.5.21" } }),
+      );
+      writeFileSync(
+        join(cwd, "starwind.config.json"),
+        JSON.stringify({ version: 2, framework: "svelte", components: [] }),
+      );
+      const result = await starwindInitTool.handler({ cwd, packageManager: "pnpm" });
+      expect(result.framework).toBe("svelte");
+      expect(result.frameworkSource).toBe("starwind-config");
+      expect(result.command).toBe("pnpm dlx starwind@latest init --defaults");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it("prefers the configured framework over dependency hints", async () => {

@@ -216,14 +216,18 @@ describe("searchProBlocksTool", () => {
       const proReqs = result.proRequirements as { important: string; initCommand: string };
       expect(proReqs.important).toContain("--pro");
       expect(proReqs.initCommand).toContain("init --defaults --pro");
+      expect(result.proRequirements).toMatchObject({
+        frameworkNote: expect.stringContaining("Astro components"),
+      });
     });
 
     it("should include proRequirements when no filters provided", async () => {
       const result = await searchProBlocksTool.handler({});
 
       expect(result.proRequirements).toBeDefined();
-      const proReqs = result.proRequirements as { important: string };
+      const proReqs = result.proRequirements as { important: string; frameworkNote: string };
       expect(proReqs.important).toContain("--pro");
+      expect(proReqs.frameworkNote).toContain("every framework");
     });
   });
 });

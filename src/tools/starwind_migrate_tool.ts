@@ -28,7 +28,7 @@ export const starwindMigrateTool = {
 
   async handler(args: StarwindMigrateArgs = {}): Promise<Record<string, unknown>> {
     const cwd = args.cwd ?? process.cwd();
-    const project = inspectStarwindProject(cwd);
+    const project = inspectStarwindProject(cwd, { packageDocs: args.cwd !== undefined });
     const pmInfo = args.packageManager
       ? { name: args.packageManager, source: "user-specified" as const }
       : { ...detectPackageManager({ cwd }), source: "detected" as const };

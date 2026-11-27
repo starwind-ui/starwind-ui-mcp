@@ -4,11 +4,16 @@ import { inspectStarwindProject } from "../utils/project_context.js";
 import {
   getStarwindManifest,
   resetStarwindManifestCache,
+  STARWIND_FRAMEWORKS,
   type StarwindComponent,
   type StarwindFramework,
   type StarwindPrimitive,
 } from "../utils/starwind_manifest.js";
-import { getProDiscovery, getProUpgrade } from "../utils/starwind_pro_guidance.js";
+import {
+  getProDiscovery,
+  getProFrameworkWarning,
+  getProUpgrade,
+} from "../utils/starwind_pro_guidance.js";
 import {
   getStarwindProManifest,
   resetStarwindProManifestCache,
@@ -136,12 +141,20 @@ export function resetStarwindSearchToolState(): void {
 export const starwindSearchTool = {
   name: "starwind_search",
   description:
-    "Searches Starwind UI v3 styled components, Primitive adapters, and Starwind Pro blocks with framework-aware results.",
+    "Searches Starwind UI v3 styled components, Primitive adapters, and Starwind Pro blocks with framework-aware results for Astro, React, Vue, and Svelte. Pro results appear for every framework; Pro blocks are Astro components.",
   inputSchema: {
     query: z.string().optional(),
     surface: z.enum(["styled", "primitive", "all"]).optional().describe("Defaults to all."),
-    cwd: z.string().optional().describe("Project directory used to detect existing Pro setup."),
-    framework: z.enum(["astro", "react", "all"]).optional(),
+    cwd: z
+      .string()
+      .optional()
+      .describe(
+        "Project directory used to detect the framework, existing Pro setup, and package docs.",
+      ),
+    framework: z
+      .enum([...STARWIND_FRAMEWORKS, "all"])
+      .optional()
+      .describe("Filter styled and primitive results by framework. Defaults to all."),
     plan: z.enum(["free", "pro"]).optional(),
     category: z.string().optional(),
     limit: z.number().optional().describe("Pro result limit; defaults to 20 and caps at 50."),
@@ -158,8 +171,10 @@ export const starwindSearchTool = {
     const limit = Math.min(Math.max(1, Math.floor(args.limit ?? DEFAULT_LIMIT)), MAX_LIMIT);
     const offset = Math.max(0, Math.floor(args.offset ?? 0));
     const metadataPromise = getStarwindManifest();
-    const project = inspectStarwindProject(args.cwd ?? process.cwd());
-    const shouldSearchPro = surface !== "primitive" && framework !== "react";
+    const project = inspectStarwindProject(args.cwd ?? process.cwd(), {
+      packageDocs: args.cwd !== undefined,
+    });
+    const shouldSearchPro = surface !== "primitive";
     const proPromise = shouldSearchPro
       ? getStarwindProManifest()
           .then((value) => ({ ok: true as const, ...value }))
@@ -169,10 +184,7 @@ export const starwindSearchTool = {
           }))
       : Promise.resolve({
           ok: false as const,
-          error:
-            framework === "react"
-              ? "Starwind Pro blocks currently target Astro."
-              : "Pro search is not part of primitive-only results.",
+          error: "Pro search is not part of primitive-only results.",
         });
     const [{ manifest, source }, pro] = await Promise.all([metadataPromise, proPromise]);
 
@@ -227,6 +239,12 @@ export const starwindSearchTool = {
       : [];
     const paidResults = proResults.filter((block) => block.plan === "pro");
     const totalMatches = styledResults.length + primitiveResults.length + proMatches.length;
+    const proFrameworkWarning =
+      shouldSearchPro && pro.ok
+        ? getProFrameworkWarning(
+            framework ?? project.configuredFramework ?? project.detectedFramework,
+          )
+        : undefined;
 
     return {
       query,
@@ -280,6 +298,7 @@ export const starwindSearchTool = {
         : shouldSearchPro && pro.ok
           ? { proDiscovery: getProDiscovery() }
           : {}),
+      ...(proFrameworkWarning ? { proFrameworkWarning } : {}),
       message:
         !query && !args.category && !args.plan
           ? "Provide a query, category, or plan to search Starwind UI."

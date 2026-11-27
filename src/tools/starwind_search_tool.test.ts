@@ -34,7 +34,7 @@ describe("starwindSearchTool", () => {
     expect(result.totalMatches).toBe(2);
     expect(result.styledComponents.results[0]).toMatchObject({
       name: "button",
-      implementationTargets: ["astro", "react"],
+      implementationTargets: ["astro", "react", "vue", "svelte"],
     });
     expect(result.primitives.results[0]).toMatchObject({ id: "button" });
     expect(result.proDiscovery).toMatchObject({
@@ -43,13 +43,58 @@ describe("starwindSearchTool", () => {
     });
   });
 
-  it("does not query Astro-only Pro metadata for React", async () => {
+  it("returns Pro results for React with the Astro components warning", async () => {
     const fetchMock = mockManifests();
     vi.stubGlobal("fetch", fetchMock);
-    const result = await starwindSearchTool.handler({ query: "image", framework: "react" });
-    expect(result.totalMatches).toBe(0);
-    expect(result.proBlocks.note).toContain("target Astro");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const result = await starwindSearchTool.handler({ query: "hero", framework: "react" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.proBlocks.results.map((block: { id: string }) => block.id)).toEqual(["hero-01"]);
+    expect(result.proBlocks.results[0]).toMatchObject({
+      installCommand: "npx starwind@latest add @starwind-pro/hero-01 button --yes",
+    });
+    expect(result.proDiscovery).toBeDefined();
+    expect(result.proFrameworkWarning).toContain("Astro components");
+  });
+
+  it.each(["vue", "svelte"] as const)(
+    "filters styled and primitive results for %s and keeps Pro results",
+    async (framework) => {
+      const result = await starwindSearchTool.handler({ query: "button", framework });
+      expect(result.styledComponents.results[0]).toMatchObject({
+        name: "button",
+        addCommand: `npx starwind@latest add button --yes --framework ${framework}`,
+      });
+      expect(result.primitives.results[0].adapters).toEqual([
+        {
+          framework,
+          packageName: `@starwind-ui/${framework}`,
+          importSource: `@starwind-ui/${framework}/button`,
+        },
+      ]);
+      expect(result.proBlocks.source).toBe("network");
+      expect(result.proFrameworkWarning).toContain("Astro components");
+
+      const image = await starwindSearchTool.handler({ query: "image", framework });
+      expect(image.styledComponents.results).toEqual([]);
+    },
+  );
+
+  it("uses the detected project framework for the Pro warning", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-search-svelte-"));
+    try {
+      writeFileSync(
+        join(cwd, "package.json"),
+        JSON.stringify({ devDependencies: { "@sveltejs/kit": "^2", svelte: "^5.29.0" } }),
+      );
+      const result = await starwindSearchTool.handler({ query: "hero", cwd });
+      expect(result.proBlocks.results).toHaveLength(1);
+      expect(result.proFrameworkWarning).toContain("Astro components");
+
+      const astro = await starwindSearchTool.handler({ query: "hero", framework: "astro", cwd });
+      expect(astro.proFrameworkWarning).toBeUndefined();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it("marks free catalog blocks as requiring no paid setup", async () => {

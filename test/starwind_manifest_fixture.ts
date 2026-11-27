@@ -5,7 +5,7 @@ export const aiManifestFixture: StarwindManifest = {
   version: 2,
   runtimeCli: {
     configVersion: 2,
-    implementationTargets: ["legacy-astro", "astro", "react"],
+    implementationTargets: ["legacy-astro", "astro", "react", "vue", "svelte"],
   },
   components: [
     {
@@ -13,7 +13,7 @@ export const aiManifestFixture: StarwindManifest = {
       title: "Button",
       description: "An interactive button.",
       installable: true,
-      implementationTargets: ["astro", "react"],
+      implementationTargets: ["astro", "react", "vue", "svelte"],
       publicImportPath: "@/components/starwind/button",
       installCommand: "npx starwind@latest add button",
       updateCommand: "npx starwind@latest update button",
@@ -28,7 +28,7 @@ export const aiManifestFixture: StarwindManifest = {
       title: "Combobox",
       description: "A searchable selection component.",
       installable: true,
-      implementationTargets: ["astro", "react"],
+      implementationTargets: ["astro", "react", "vue", "svelte"],
       publicImportPath: "@/components/starwind/combobox",
       installCommand: "npx starwind@latest add combobox",
       updateCommand: "npx starwind@latest update combobox",
@@ -62,6 +62,14 @@ export const aiManifestFixture: StarwindManifest = {
       type: "guide",
     },
     {
+      name: "vite-vue",
+      title: "Vite Vue Installation",
+      description: "Install with Vite and Vue.",
+      docsUrl: "https://starwind.dev/docs/frameworks/vite-vue/",
+      markdownUrl: "https://starwind.dev/docs/frameworks/vite-vue.md",
+      type: "guide",
+    },
+    {
       name: "vite-react",
       title: "Vite React Installation",
       description: "Install with Vite and React.",
@@ -90,6 +98,16 @@ export const aiManifestFixture: StarwindManifest = {
             packageName: "@starwind-ui/react",
             importSource: "@starwind-ui/react/button",
           },
+          {
+            framework: "Vue",
+            packageName: "@starwind-ui/vue",
+            importSource: "@starwind-ui/vue/button",
+          },
+          {
+            framework: "Svelte",
+            packageName: "@starwind-ui/svelte",
+            importSource: "@starwind-ui/svelte/button",
+          },
         ],
         runtime: {
           factory: "createButton",
@@ -114,6 +132,16 @@ export const aiManifestFixture: StarwindManifest = {
             framework: "React",
             packageName: "@starwind-ui/react",
             importSource: "@starwind-ui/react/combobox",
+          },
+          {
+            framework: "Vue",
+            packageName: "@starwind-ui/vue",
+            importSource: "@starwind-ui/vue/combobox",
+          },
+          {
+            framework: "Svelte",
+            packageName: "@starwind-ui/svelte",
+            importSource: "@starwind-ui/svelte/combobox",
           },
         ],
       },

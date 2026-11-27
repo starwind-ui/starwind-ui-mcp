@@ -13,6 +13,12 @@ liveDescribe("starwind.dev v3 live contract", () => {
     expect(source).toBe("network");
     expect(manifest.version).toBe(2);
     expect(manifest.runtimeCli.configVersion).toBe(2);
+    expect(manifest.runtimeCli.implementationTargets).toEqual(
+      expect.arrayContaining(["astro", "react", "vue", "svelte"]),
+    );
+    expect(
+      manifest.components.find((component) => component.name === "button")?.implementationTargets,
+    ).toEqual(expect.arrayContaining(["vue", "svelte"]));
     expect(manifest.components.length).toBeGreaterThanOrEqual(55);
     expect(manifest.layeredDocs.primitives.length).toBeGreaterThanOrEqual(36);
     expect(manifest.guides.some((guide) => guide.name.includes("migration"))).toBe(true);

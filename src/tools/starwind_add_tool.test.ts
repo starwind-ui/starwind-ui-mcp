@@ -102,7 +102,7 @@ describe("starwindAddTool", () => {
     },
   );
 
-  it("rejects Pro blocks for a configured React project without an explicit override", async () => {
+  it("installs Pro blocks in a configured React project with the Astro components warning", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "starwind-react-add-"));
     try {
       writeFileSync(join(cwd, "package.json"), JSON.stringify({ dependencies: { react: "^19" } }));
@@ -115,8 +115,12 @@ describe("starwindAddTool", () => {
         cwd,
         packageManager: "npm",
       });
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("target Astro");
+      expect(result.success).toBe(true);
+      expect(result.command).toBe(
+        "npx starwind@latest add @starwind-pro/hero-01 button --yes --framework react --package-manager npm",
+      );
+      expect(result.proFrameworkWarning).toContain("Astro components");
+      expect(result.proDiscovery).toBeDefined();
 
       const componentResult = await starwindAddTool.handler({
         components: ["image"],
@@ -172,6 +176,71 @@ describe("starwindAddTool", () => {
       catalogUrl: "https://pro.starwind.dev/components/",
       setupCommand: "pnpm dlx starwind@latest setup --yes",
     });
+  });
+
+  it.each(["vue", "svelte"] as const)(
+    "generates %s styled and primitive commands",
+    async (framework) => {
+      const styled = await starwindAddTool.handler({
+        components: ["button", "image"],
+        framework,
+        packageManager: "pnpm",
+        cwd: "/project-that-does-not-exist",
+      });
+      expect(styled).toMatchObject({
+        success: true,
+        framework,
+        command: `pnpm dlx starwind@latest add button --yes --framework ${framework} --package-manager pnpm`,
+      });
+      expect(styled.warnings).toMatchObject({ invalidComponents: ["image"] });
+
+      const primitive = await starwindAddTool.handler({
+        components: ["combobox"],
+        surface: "primitive",
+        framework,
+        packageManager: "npm",
+        cwd: "/project-that-does-not-exist",
+      });
+      expect(primitive.command).toBe(
+        `npx starwind@latest primitives add combobox --yes --framework ${framework} --package-manager npm`,
+      );
+    },
+  );
+
+  it("keeps paid Pro deferral for a Svelte project and adds the Astro components warning", async () => {
+    const result = await starwindAddTool.handler({
+      components: ["@starwind-pro/pricing-02"],
+      framework: "svelte",
+      init: true,
+      packageManager: "npm",
+      cwd: "/project-that-does-not-exist",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.command).toBe("npx starwind@latest init --defaults --framework svelte --pro");
+    expect(result.deferredCommand).toBe(
+      "npx starwind@latest add @starwind-pro/pricing-02 badge button card switch --yes --framework svelte --package-manager npm",
+    );
+    expect(result.proUpgrade).toMatchObject({ required: true, status: "setup-required" });
+    expect(result.proFrameworkWarning).toContain("Astro components");
+  });
+
+  it("omits the Pro warning for Astro and for non-Pro installs", async () => {
+    const astro = await starwindAddTool.handler({
+      components: ["@starwind-pro/hero-01"],
+      framework: "astro",
+      packageManager: "npm",
+      cwd: "/project-that-does-not-exist",
+    });
+    expect(astro.proFrameworkWarning).toBeUndefined();
+
+    const vue = await starwindAddTool.handler({
+      components: ["button"],
+      framework: "vue",
+      packageManager: "npm",
+      cwd: "/project-that-does-not-exist",
+    });
+    expect(vue.proFrameworkWarning).toBeUndefined();
   });
 
   it("returns setup first and defers a paid block install for a new project", async () => {

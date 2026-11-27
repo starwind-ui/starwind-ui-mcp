@@ -1,8 +1,17 @@
+import { existsSync } from "fs";
+import { resolve } from "path";
 import { z } from "zod";
 
 import {
+  findStarwindPackageDocs,
+  inspectStarwindProject,
+  type StarwindPackageDocs,
+} from "../utils/project_context.js";
+import {
   getStarwindManifest,
+  isStarwindFramework,
   resetStarwindManifestCache,
+  STARWIND_FRAMEWORKS,
   type StarwindMetadataSource,
 } from "../utils/starwind_manifest.js";
 
@@ -10,6 +19,14 @@ export interface StarwindDocsArgs {
   topic?: string;
   surface?: "auto" | "component" | "primitive" | "guide" | "runtime";
   full?: boolean;
+  cwd?: string;
+}
+
+export interface StarwindInstalledDocs {
+  path: string;
+  packageName: string;
+  packageVersion: string | null;
+  note: string;
 }
 
 export interface StarwindDocsResult {
@@ -21,6 +38,7 @@ export interface StarwindDocsResult {
   full: boolean;
   pageType?: "component" | "primitive" | "guide" | "runtime";
   metadataSource?: StarwindMetadataSource;
+  installedDocs?: StarwindInstalledDocs;
   note?: string;
   cacheInfo: { age: string; remainingTtl: string } | null;
   rateLimitInfo: { requestsRemaining: number; resetAfter: string };
@@ -100,6 +118,10 @@ const GUIDE_ALIASES: Record<string, string> = {
   next: "nextjs",
   "next.js": "nextjs",
   tanstack: "tanstack-start",
+  vue: "vite-vue",
+  "svelte-kit": "sveltekit",
+  laravel: "laravel-inertia-vue",
+  inertia: "laravel-inertia-vue",
 };
 const FETCH_TIMEOUT_MS = 5000;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -150,13 +172,32 @@ async function resolvePage(topic: string, surface: NonNullable<StarwindDocsArgs[
   );
 
   if (surface === "runtime" || (surface === "auto" && normalized === "runtime")) {
-    return { url: DOCS_URLS.runtimeMarkdown, pageType: "runtime" as const, source };
+    return {
+      url: DOCS_URLS.runtimeMarkdown,
+      pageType: "runtime" as const,
+      source,
+      primitiveId: primitive?.id,
+    };
+  }
+  // The published manifest lists framework names such as "astro" and "react" as aliases of every
+  // styled component, so a framework or guide alias topic resolves to its guide first.
+  if (
+    surface === "auto" &&
+    guide &&
+    (isStarwindFramework(normalized) || Object.hasOwn(GUIDE_ALIASES, normalized))
+  ) {
+    return { url: guide.markdownUrl, pageType: "guide" as const, source };
   }
   if ((surface === "component" || surface === "auto") && component) {
     return { url: component.markdownUrl, pageType: "component" as const, source };
   }
   if ((surface === "primitive" || surface === "auto") && primitive) {
-    return { url: primitive.markdownUrl, pageType: "primitive" as const, source };
+    return {
+      url: primitive.markdownUrl,
+      pageType: "primitive" as const,
+      source,
+      primitiveId: primitive.id,
+    };
   }
   if ((surface === "guide" || surface === "auto") && guide) {
     return { url: guide.markdownUrl, pageType: "guide" as const, source };
@@ -173,9 +214,62 @@ async function resolvePage(topic: string, surface: NonNullable<StarwindDocsArgs[
       url: `https://starwind.dev/docs/primitives/${normalized}.md`,
       pageType: "primitive" as const,
       source,
+      primitiveId: normalized,
     };
   }
   return null;
+}
+
+function installedPage(
+  docs: StarwindPackageDocs | undefined,
+  relativePath: string,
+): StarwindInstalledDocs | undefined {
+  if (!docs) return undefined;
+  const path = resolve(docs.docsDir, relativePath);
+  if (!existsSync(path)) return undefined;
+  const version = docs.packageVersion
+    ? `${docs.packageName}@${docs.packageVersion}`
+    : docs.packageName;
+  return {
+    path,
+    packageName: docs.packageName,
+    packageVersion: docs.packageVersion,
+    note: `This page ships with the installed ${version} package and matches its version. Prefer it when it differs from the website page.`,
+  };
+}
+
+/**
+ * Finds the installed package page for a Primitive or Runtime topic. The project framework's
+ * adapter package comes first, then the other adapter packages, then the Runtime controller page.
+ */
+function findInstalledDocs(
+  cwd: string,
+  pageType: "primitive" | "runtime",
+  primitiveId: string | undefined,
+): StarwindInstalledDocs | undefined {
+  const packageDocs = findStarwindPackageDocs(cwd);
+  if (!packageDocs.length) return undefined;
+  const byPackage = (name: string) => packageDocs.find((docs) => docs.packageName === name);
+  const id = primitiveId && SLUG_PATTERN.test(primitiveId) ? primitiveId : undefined;
+  const runtimeDocs = byPackage("@starwind-ui/runtime");
+
+  if (pageType === "runtime") {
+    return (
+      (id ? installedPage(runtimeDocs, `controllers/${id}.md`) : undefined) ??
+      installedPage(runtimeDocs, "README.md")
+    );
+  }
+  if (!id) return undefined;
+  const project = inspectStarwindProject(cwd);
+  const preferred = project.configuredFramework ?? project.detectedFramework;
+  const frameworks = preferred
+    ? [preferred, ...STARWIND_FRAMEWORKS.filter((framework) => framework !== preferred)]
+    : [...STARWIND_FRAMEWORKS];
+  for (const framework of frameworks) {
+    const page = installedPage(byPackage(`@starwind-ui/${framework}`), `primitives/${id}.md`);
+    if (page) return page;
+  }
+  return installedPage(runtimeDocs, `controllers/${id}.md`);
 }
 
 function filterAggregate(content: string, topic: string): string {
@@ -208,10 +302,16 @@ function telemetry() {
 export const starwindDocsTool = {
   name: "starwind_docs",
   description:
-    "Fetches current Starwind UI v3 documentation across styled components, primitives, Runtime, migration, and Astro or React framework guides.",
+    "Fetches current Starwind UI v3 documentation across styled components, primitives, Runtime, migration, and Astro, React, Vue, or Svelte framework guides. With cwd, Primitive and Runtime topics also return installedDocs: the version-matched page from the installed @starwind-ui package.",
   inputSchema: {
     topic: z.string().optional(),
     surface: z.enum(["auto", "component", "primitive", "guide", "runtime"]).optional(),
+    cwd: z
+      .string()
+      .optional()
+      .describe(
+        "Project directory. For a Primitive or Runtime topic, the result points to the installed package docs page when it exists.",
+      ),
     full: z
       .boolean()
       .optional()
@@ -224,8 +324,12 @@ export const starwindDocsTool = {
   async handler(args: StarwindDocsArgs = {}): Promise<StarwindDocsResult> {
     const topic = args.topic?.trim().toLowerCase() || null;
     const surface = args.surface ?? "auto";
+    let installedDocs: StarwindInstalledDocs | undefined;
     if (topic) {
       const page = await resolvePage(topic, surface);
+      if (page && args.cwd && (page.pageType === "primitive" || page.pageType === "runtime")) {
+        installedDocs = findInstalledDocs(args.cwd, page.pageType, page.primitiveId);
+      }
       if (page) {
         const key = `page:${page.url}`;
         const cached = docsCache.get(key);
@@ -241,6 +345,7 @@ export const starwindDocsTool = {
             full: args.full === true,
             pageType: page.pageType,
             metadataSource: page.source,
+            ...(installedDocs ? { installedDocs } : {}),
             cacheInfo: docsCache.info(key),
             rateLimitInfo: telemetry(),
           };
@@ -265,6 +370,7 @@ export const starwindDocsTool = {
       topic: args.topic ?? null,
       surface,
       full: args.full === true,
+      ...(installedDocs ? { installedDocs } : {}),
       note: topic
         ? "No exact manifest page resolved; this is a filtered aggregate result."
         : undefined,
