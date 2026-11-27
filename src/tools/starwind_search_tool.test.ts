@@ -373,6 +373,24 @@ describe("starwindSearchTool", () => {
       });
     });
 
+    it("omits projectImportPath for a component the project framework does not implement", async () => {
+      await withProject(
+        { "package.json": JSON.stringify({ dependencies: { nuxt: "^4", vue: "^3.5.21" } }) },
+        async (cwd) => {
+          const result = await starwindSearchTool.handler({
+            query: "image",
+            surface: "styled",
+            cwd,
+          });
+          expect(result.styledComponents.results[0]).toMatchObject({
+            name: "image",
+            publicImportPath: "@/components/starwind/image",
+          });
+          expect(result.styledComponents.results[0].projectImportPath).toBeUndefined();
+        },
+      );
+    });
+
     it("omits projectImportPath without cwd or project evidence", async () => {
       const result = await starwindSearchTool.handler({ query: "button", surface: "styled" });
       expect(result.styledComponents.results[0].projectImportPath).toBeUndefined();

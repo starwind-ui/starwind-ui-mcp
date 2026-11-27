@@ -87,9 +87,13 @@ function searchStyled(
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name))
     .map(({ item }) => {
-      const projectImportPath = context.project
-        ? getProjectStyledImportPath(context.project, framework, item.name)
-        : null;
+      // Only a component the project's framework implements gets a project import path.
+      const target =
+        framework ?? context.project?.configuredFramework ?? context.project?.detectedFramework;
+      const projectImportPath =
+        context.project && target && item.implementationTargets.includes(target)
+          ? getProjectStyledImportPath(context.project, target, item.name)
+          : null;
       return {
         name: item.name,
         title: item.title,

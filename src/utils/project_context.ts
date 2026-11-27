@@ -162,7 +162,23 @@ function configCallsPlugin(content: string, moduleName: string, exportName: stri
     .find(([imported]) => imported === exportName);
   if (!binding) return false;
   const local = binding[1] ?? binding[0];
-  return new RegExp(`plugins\\s*:\\s*\\[[^\\]]*\\b${escapeRegExp(local)}\\s*\\(`).test(content);
+  const plugins = readPluginsArray(content);
+  return plugins !== null && new RegExp(`\\b${escapeRegExp(local)}\\s*\\(`).test(plugins);
+}
+
+/** Returns the text of the plugins array, matching nested brackets by depth. */
+function readPluginsArray(content: string): string | null {
+  const start = content.match(/plugins\s*:\s*\[/);
+  if (!start || start.index === undefined) return null;
+  const open = start.index + start[0].length;
+  let depth = 1;
+  for (let index = open; index < content.length; index += 1) {
+    const char = content[index];
+    if (char === "[") depth += 1;
+    else if (char === "]") depth -= 1;
+    if (depth === 0) return content.slice(open, index);
+  }
+  return null;
 }
 
 /**

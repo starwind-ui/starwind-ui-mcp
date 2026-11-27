@@ -372,6 +372,32 @@ describe("inspectStarwindProject", () => {
       );
     });
 
+    it("finds the Svelte plugin after a plugin with nested brackets", () => {
+      viteSvelteProject(
+        "^5.29.0",
+        [
+          'import { svelte } from "@sveltejs/vite-plugin-svelte";',
+          'import extraPlugin from "vite-plugin-extra";',
+          "export default {",
+          '  plugins: [extraPlugin({ include: ["**/*.md"] }), svelte()],',
+          "};",
+        ].join("\n"),
+        (cwd) => expect(inspectStarwindProject(cwd).detectedHost).toBe("vite-svelte"),
+      );
+    });
+
+    it("ignores a Svelte plugin call outside the plugins array", () => {
+      viteSvelteProject(
+        "^5.29.0",
+        [
+          'import { svelte } from "@sveltejs/vite-plugin-svelte";',
+          "const unused = svelte();",
+          'export default { plugins: [other({ list: ["a"] })] };',
+        ].join("\n"),
+        (cwd) => expect(inspectStarwindProject(cwd).detectedFramework).toBe("react"),
+      );
+    });
+
     it.each(["^5.28.0", "^4.2.0", ">=5.29.0", "catalog:", "workspace:*"])(
       "keeps React when the Svelte range %s is outside >=5.29.0 <6",
       (range) => {
