@@ -61,6 +61,9 @@ describe("v3 MCP registration", () => {
       "all",
     ]);
     expect(property("starwind_docs", "cwd")).toBeDefined();
+    for (const tool of ["starwind_init", "starwind_add", "starwind_migrate"]) {
+      expect(property(tool, "packageManager")?.enum).toEqual(["npm", "pnpm", "yarn", "bun"]);
+    }
     expect(property("starwind_migrate", "framework")).toBeUndefined();
   });
 

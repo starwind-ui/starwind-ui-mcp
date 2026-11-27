@@ -7,6 +7,8 @@ export function getDlxCommand(packageManager: PackageManager): string {
       return "pnpm dlx";
     case "yarn":
       return "yarn dlx";
+    case "bun":
+      return "bunx";
     case "npm":
     default:
       return "npx";

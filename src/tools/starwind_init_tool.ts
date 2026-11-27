@@ -40,7 +40,7 @@ export const starwindInitTool = {
       .string()
       .optional()
       .describe("Project directory used for package manager and framework detection."),
-    packageManager: z.enum(["npm", "pnpm", "yarn"]).optional(),
+    packageManager: z.enum(["npm", "pnpm", "yarn", "bun"]).optional(),
     framework: z
       .enum(STARWIND_FRAMEWORKS)
       .optional()

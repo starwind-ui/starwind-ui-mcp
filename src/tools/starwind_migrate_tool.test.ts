@@ -28,6 +28,22 @@ describe("starwindMigrateTool", () => {
     });
   });
 
+  it("generates a bunx migration command for a Bun project", async () => {
+    writeFileSync(join(cwd, "bun.lockb"), "");
+    writeFileSync(
+      join(cwd, "starwind.config.json"),
+      JSON.stringify({ framework: "astro", components: ["button"] }),
+    );
+    const interactive = await starwindMigrateTool.handler({ cwd });
+    const yes = await starwindMigrateTool.handler({ cwd, packageManager: "bun", yes: true });
+    expect(interactive).toMatchObject({
+      command: "bunx starwind@latest migrate",
+      packageManager: "bun",
+      packageManagerSource: "detected",
+    });
+    expect(yes.command).toBe("bunx starwind@latest migrate --yes --package-manager bun");
+  });
+
   it("does not label a missing config as migratable", async () => {
     const result = await starwindMigrateTool.handler({ cwd, packageManager: "npm" });
     expect(result.applicable).toBe(false);

@@ -108,6 +108,32 @@ describe("starwindInitTool", () => {
     }
   });
 
+  it("generates bunx commands for Bun", async () => {
+    const result = await starwindInitTool.handler({
+      cwd: "/project-that-does-not-exist",
+      packageManager: "bun",
+      framework: "svelte",
+    });
+    expect(result.command).toBe("bunx starwind@latest init --defaults --framework svelte");
+    expect(result.packageManager).toBe("bun");
+    expect(result.proDiscovery).toMatchObject({ setupCommand: "bunx starwind@latest setup --yes" });
+  });
+
+  it("detects Bun from bun.lock", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-init-bun-"));
+    try {
+      writeFileSync(join(cwd, "bun.lock"), "");
+      const result = await starwindInitTool.handler({ cwd });
+      expect(result).toMatchObject({
+        packageManager: "bun",
+        packageManagerSource: "detected",
+        command: "bunx starwind@latest init --defaults",
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("prefers the configured framework over dependency hints", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "starwind-init-context-"));
     try {

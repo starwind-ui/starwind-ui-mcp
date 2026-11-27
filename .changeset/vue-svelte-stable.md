@@ -9,3 +9,5 @@ The server now accepts the current `ai-manifest.json`. Version 0.5.2 rejected it
 Starwind Pro works in every framework. Search, setup, and install no longer reject or hide Pro blocks in React. Pro blocks are Astro components, so results for a React, Vue, or Svelte target include `proFrameworkWarning`.
 
 When you pass `cwd`, project context lists the docs that ship in installed `@starwind-ui/*` packages (1.6.0 and newer) under `packageDocs`. `starwind_docs` accepts `cwd`. For a Primitive or Runtime topic, it returns `installedDocs` with the path to the page that matches the installed version.
+
+Add Bun support. The `packageManager` input accepts `bun`. A project with `bun.lock` or `bun.lockb` is detected as Bun, and generated commands use `bunx starwind@latest`.

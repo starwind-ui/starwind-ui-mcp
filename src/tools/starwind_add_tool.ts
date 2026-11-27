@@ -100,7 +100,7 @@ export const starwindAddTool = {
     init: z.boolean().optional().describe("Prepend project initialization for a new setup."),
     pro: z.boolean().optional().describe("Configure paid Pro authorization during optional init."),
     cwd: z.string().optional(),
-    packageManager: z.enum(["npm", "pnpm", "yarn"]).optional(),
+    packageManager: z.enum(["npm", "pnpm", "yarn", "bun"]).optional(),
   },
   outputSchema: {
     result: z.record(z.unknown()).describe("Structured Starwind installation result."),

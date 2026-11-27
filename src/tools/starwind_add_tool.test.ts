@@ -207,6 +207,19 @@ describe("starwindAddTool", () => {
     },
   );
 
+  it("generates bunx add commands with the Bun package manager", async () => {
+    const result = await starwindAddTool.handler({
+      components: ["button"],
+      framework: "vue",
+      packageManager: "bun",
+      init: true,
+      cwd: "/project-that-does-not-exist",
+    });
+    expect(result.command).toBe(
+      "bunx starwind@latest init --defaults --framework vue && bunx starwind@latest add button --yes --framework vue --package-manager bun",
+    );
+  });
+
   it("keeps paid Pro deferral for a Svelte project and adds the Astro components warning", async () => {
     const result = await starwindAddTool.handler({
       components: ["@starwind-pro/pricing-02"],

@@ -4,7 +4,7 @@ import { resolve } from "path";
 /**
  * Represents a supported package manager
  */
-export type PackageManager = "npm" | "yarn" | "pnpm";
+export type PackageManager = "npm" | "yarn" | "pnpm" | "bun";
 
 /**
  * Configuration options for package manager detection
@@ -35,10 +35,12 @@ export interface PackageManagerInfo {
 /**
  * Map of package managers to their lock files
  */
-const LOCK_FILES: Record<PackageManager, string> = {
-  npm: "package-lock.json",
-  yarn: "yarn.lock",
-  pnpm: "pnpm-lock.yaml",
+const LOCK_FILES: Record<PackageManager, string[]> = {
+  npm: ["package-lock.json"],
+  yarn: ["yarn.lock"],
+  pnpm: ["pnpm-lock.yaml"],
+  // Bun 1.2 and newer write bun.lock. Older projects can still have bun.lockb.
+  bun: ["bun.lock", "bun.lockb"],
 };
 
 /**
@@ -62,6 +64,12 @@ const PACKAGE_MANAGER_COMMANDS: Record<PackageManager, Omit<PackageManagerInfo, 
     addCmd: "pnpm add",
     removeCmd: "pnpm remove",
     runCmd: "pnpm",
+  },
+  bun: {
+    installCmd: "bun install",
+    addCmd: "bun add",
+    removeCmd: "bun remove",
+    runCmd: "bun run",
   },
 };
 
@@ -87,18 +95,15 @@ const PACKAGE_MANAGER_COMMANDS: Record<PackageManager, Omit<PackageManagerInfo, 
 export function detectPackageManager(options: PackageManagerOptions = {}): PackageManagerInfo {
   const { cwd = process.cwd(), defaultManager = "npm" } = options;
 
-  // Determine priorities for checking lock files
-  const packageManagers: PackageManager[] = ["pnpm", "yarn", "npm"];
+  // Same lockfile order as the Starwind CLI: pnpm, yarn, bun, npm.
+  const packageManagers: PackageManager[] = ["pnpm", "yarn", "bun", "npm"];
 
   // Detected package managers
   const detected: PackageManager[] = [];
 
   // Check for each lock file
   for (const pm of packageManagers) {
-    const lockFile = LOCK_FILES[pm];
-    const lockFilePath = resolve(cwd, lockFile);
-
-    if (existsSync(lockFilePath)) {
+    if (LOCK_FILES[pm].some((lockFile) => existsSync(resolve(cwd, lockFile)))) {
       detected.push(pm);
       // Found a lock file, no need to check others
       break;
