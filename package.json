@@ -1,6 +1,6 @@
 {
   "name": "@starwind-ui/mcp",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Starwind UI v3 tools for Astro, React, Vue, and Svelte setup, components, docs, and migration.",
   "mcpName": "io.github.starwind-ui/mcp",
   "homepage": "https://starwind.dev/docs/getting-started/mcp/",
