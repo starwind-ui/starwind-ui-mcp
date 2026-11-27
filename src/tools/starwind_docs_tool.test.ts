@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -368,6 +368,85 @@ describe("starwindDocsTool", () => {
         starwindDocsTool.handler({ topic: "image", surface: "component", cwd }),
       ).rejects.toThrow("Unable to fetch Starwind documentation");
     });
+
+    it("follows a pnpm package symlink to the real package folder", async () => {
+      const store = join(cwd, "node_modules", ".pnpm", "vue@1.6.0", "node_modules", "@starwind-ui");
+      const realDir = join(store, "vue");
+      mkdirSync(join(realDir, "docs", "primitives"), { recursive: true });
+      writeFileSync(join(realDir, "package.json"), JSON.stringify({ version: "1.6.0" }));
+      writeFileSync(join(realDir, "docs", "llms.txt"), "# vue");
+      writeFileSync(join(realDir, "docs", "primitives", "button.md"), "# Button");
+      mkdirSync(join(cwd, "node_modules", "@starwind-ui"), { recursive: true });
+      symlinkSync(realDir, join(cwd, "node_modules", "@starwind-ui", "vue"), "dir");
+
+      const result = await starwindDocsTool.handler({ topic: "button", surface: "primitive", cwd });
+
+      expect(result.installedDocs?.path).toBe(
+        join(cwd, "node_modules", "@starwind-ui", "vue", "docs", "primitives", "button.md"),
+      );
+    });
+
+    it("refuses a docs page that links outside the package docs folder", async () => {
+      const docs = addPackage("vue", "1.6.0", []);
+      const secret = join(cwd, "secret.md");
+      writeFileSync(secret, "secret");
+      mkdirSync(join(docs, "primitives"), { recursive: true });
+      symlinkSync(secret, join(docs, "primitives", "button.md"));
+      mkdirSync(join(docs, "primitives", "combobox.md"));
+
+      const linked = await starwindDocsTool.handler({ topic: "button", surface: "primitive", cwd });
+      const folder = await starwindDocsTool.handler({
+        topic: "combobox",
+        surface: "primitive",
+        cwd,
+      });
+
+      expect(linked.installedDocs).toBeUndefined();
+      expect(folder.installedDocs).toBeUndefined();
+    });
+
+    it("serves the installed page when the website request limit is used up", async () => {
+      const vueDocs = addPackage("vue", "1.6.0", ["primitives/button.md"]);
+      for (let index = 0; index < 10; index += 1) {
+        await starwindDocsTool.handler({ topic: `custom-${index}`, surface: "component" });
+      }
+
+      const result = await starwindDocsTool.handler({ topic: "button", surface: "primitive", cwd });
+
+      expect(result).toMatchObject({
+        resultType: "installed",
+        url: join(vueDocs, "primitives", "button.md"),
+      });
+      expect(result.note).toContain("request limit");
+      await expect(
+        starwindDocsTool.handler({ topic: "image", surface: "component", cwd }),
+      ).rejects.toThrow("Rate limit exceeded");
+    });
+  });
+
+  it("does not resolve inherited object keys as topics", async () => {
+    vi.stubGlobal("fetch", mockDocs());
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-docs-constructor-"));
+    try {
+      const docsDir = join(cwd, "node_modules", "@starwind-ui", "runtime", "docs");
+      mkdirSync(docsDir, { recursive: true });
+      writeFileSync(join(docsDir, "..", "package.json"), JSON.stringify({ version: "1.6.0" }));
+      writeFileSync(join(docsDir, "llms.txt"), "# runtime");
+      writeFileSync(join(docsDir, "README.md"), "# Runtime");
+
+      const constructorTopic = await starwindDocsTool.handler({ topic: "constructor" });
+      const runtimeConstructor = await starwindDocsTool.handler({
+        topic: "constructor",
+        surface: "runtime",
+        cwd,
+      });
+
+      expect(constructorTopic.resultType).toBe("filtered");
+      expect(runtimeConstructor.pageType).toBe("runtime");
+      expect(runtimeConstructor.installedDocs?.path).toBe(join(docsDir, "README.md"));
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it("ranks exact names on either surface above aliases", async () => {

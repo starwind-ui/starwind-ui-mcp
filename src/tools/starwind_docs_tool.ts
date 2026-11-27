@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "fs";
-import { resolve } from "path";
+import { readFileSync, realpathSync, statSync } from "fs";
+import { dirname, resolve, sep } from "path";
 import { z } from "zod";
 
 import {
@@ -108,20 +108,21 @@ const DOCS_URLS = {
   full: "https://starwind.dev/llms-full.txt",
   runtimeMarkdown: "https://starwind.dev/docs/runtime.md",
 };
-const GUIDE_ALIASES: Record<string, string> = {
-  introduction: "getting-started",
-  about: "getting-started",
-  darkmode: "dark-mode",
-  react: "vite-react",
-  vite: "vite-react",
-  next: "nextjs",
-  "next.js": "nextjs",
-  tanstack: "tanstack-start",
-  vue: "vite-vue",
-  "svelte-kit": "sveltekit",
-  laravel: "laravel-inertia-vue",
-  inertia: "laravel-inertia-vue",
-};
+// Maps avoid inherited object keys such as "constructor".
+const GUIDE_ALIASES = new Map<string, string>([
+  ["introduction", "getting-started"],
+  ["about", "getting-started"],
+  ["darkmode", "dark-mode"],
+  ["react", "vite-react"],
+  ["vite", "vite-react"],
+  ["next", "nextjs"],
+  ["next.js", "nextjs"],
+  ["tanstack", "tanstack-start"],
+  ["vue", "vite-vue"],
+  ["svelte-kit", "sveltekit"],
+  ["laravel", "laravel-inertia-vue"],
+  ["inertia", "laravel-inertia-vue"],
+]);
 const FETCH_TIMEOUT_MS = 5000;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 let docsCache = new DocsCache();
@@ -166,20 +167,20 @@ function findByPriority<T>(
 }
 
 /** Runtime topics that ship as their own page in @starwind-ui/runtime/docs. */
-const RUNTIME_PAGES: Record<string, string> = {
-  "init-starwind": "init-starwind.md",
-  initstarwind: "init-starwind.md",
-  "raw-html": "raw-html.md",
-  "raw html": "raw-html.md",
-  rawhtml: "raw-html.md",
-  theme: "theme.md",
-};
+const RUNTIME_PAGES = new Map<string, string>([
+  ["init-starwind", "init-starwind.md"],
+  ["initstarwind", "init-starwind.md"],
+  ["raw-html", "raw-html.md"],
+  ["raw html", "raw-html.md"],
+  ["rawhtml", "raw-html.md"],
+  ["theme", "theme.md"],
+]);
 /** Runtime page topics that are unambiguous in auto mode. "theme" stays a guide or aggregate topic. */
 const AUTO_RUNTIME_TOPICS = new Set(["init-starwind", "initstarwind", "raw-html", "rawhtml"]);
 
 async function resolvePage(topic: string, surface: NonNullable<StarwindDocsArgs["surface"]>) {
   const normalized = topic.toLowerCase().trim();
-  const alias = GUIDE_ALIASES[normalized] ?? normalized;
+  const alias = GUIDE_ALIASES.get(normalized) ?? normalized;
   const { manifest, source } = await getStarwindManifest();
   // Exact names and titles win over aliases on both surfaces. Published aliases include shared
   // part names ("Item", "Label"), related components ("drawer" on Sheet), and framework names.
@@ -232,7 +233,7 @@ async function resolvePage(topic: string, surface: NonNullable<StarwindDocsArgs[
       pageType: "runtime" as const,
       source,
       primitiveId: primitive?.id,
-      runtimePage: RUNTIME_PAGES[normalized],
+      runtimePage: RUNTIME_PAGES.get(normalized),
     };
   }
   if (surface === "auto") {
@@ -265,6 +266,26 @@ async function resolvePage(topic: string, surface: NonNullable<StarwindDocsArgs[
   return null;
 }
 
+/**
+ * Accepts a page only when its real path is a regular file inside the real docs folder of the
+ * real package folder. Package-manager links (a pnpm package folder is itself a symlink) still
+ * resolve, while a link that leaves the package docs is refused.
+ */
+function isRegularFileInside(path: string, docsDir: string, packageDir: string): boolean {
+  try {
+    const realPackage = realpathSync(packageDir);
+    const realDocs = realpathSync(docsDir);
+    const realPage = realpathSync(path);
+    return (
+      realDocs.startsWith(realPackage + sep) &&
+      realPage.startsWith(realDocs + sep) &&
+      statSync(realPage).isFile()
+    );
+  } catch {
+    return false;
+  }
+}
+
 function installedPage(
   docs: StarwindPackageDocs | undefined,
   relativePath: string,
@@ -272,7 +293,7 @@ function installedPage(
 ): StarwindInstalledDocs | undefined {
   if (!docs) return undefined;
   const path = resolve(docs.docsDir, relativePath);
-  if (!existsSync(path)) return undefined;
+  if (!isRegularFileInside(path, docs.docsDir, dirname(docs.docsDir))) return undefined;
   const version = docs.packageVersion
     ? `${docs.packageName}@${docs.packageVersion}`
     : docs.packageName;
@@ -378,6 +399,18 @@ export const starwindDocsTool = {
     const topic = args.topic?.trim().toLowerCase() || null;
     const surface = args.surface ?? "auto";
     let installedDocs: StarwindInstalledDocs | undefined;
+    let rateLimited = false;
+    // With an installed page, a spent request budget falls back to that page. Without one, the
+    // rate-limit error still reaches the caller.
+    const fetchDocs = async (url: string): Promise<string | null> => {
+      try {
+        return await fetchText(url);
+      } catch (error) {
+        if (!installedDocs) throw error;
+        rateLimited = true;
+        return null;
+      }
+    };
     if (topic) {
       const page = await resolvePage(topic, surface);
       if (page && args.cwd && page.pageType !== "guide") {
@@ -391,7 +424,7 @@ export const starwindDocsTool = {
       if (page) {
         const key = `page:${page.url}`;
         const cached = docsCache.get(key);
-        const documentation = cached ?? (await fetchText(page.url));
+        const documentation = cached ?? (await fetchDocs(page.url));
         if (documentation) {
           if (!cached) docsCache.set(key, documentation, 2 * 60 * 60);
           return {
@@ -414,7 +447,7 @@ export const starwindDocsTool = {
     const url = args.full ? DOCS_URLS.full : DOCS_URLS.concise;
     const key = args.full ? "aggregate:full" : "aggregate:concise";
     const cached = docsCache.get(key);
-    const aggregate = cached ?? (await fetchText(url));
+    const aggregate = cached ?? (await fetchDocs(url));
     if (!aggregate && installedDocs) {
       // Both website requests failed. The installed page still answers the topic offline.
       return {
@@ -425,7 +458,9 @@ export const starwindDocsTool = {
         surface,
         full: args.full === true,
         installedDocs,
-        note: "The website was unavailable. This is the installed package page.",
+        note: rateLimited
+          ? "The website request limit was reached. This is the installed package page."
+          : "The website was unavailable. This is the installed package page.",
         cacheInfo: null,
         rateLimitInfo: telemetry(),
       };
