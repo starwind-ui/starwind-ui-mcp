@@ -132,6 +132,54 @@ function anyFile(cwd: string, files: readonly string[]): boolean {
   return files.some((file) => existsSync(resolve(cwd, file)));
 }
 
+function readFirstFile(cwd: string, files: readonly string[]): string | null {
+  for (const file of files) {
+    const path = resolve(cwd, file);
+    if (!existsSync(path)) continue;
+    try {
+      return readFileSync(path, "utf8");
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** True when the config imports the named plugin from its module and calls it under plugins. */
+function configCallsPlugin(content: string, moduleName: string, exportName: string): boolean {
+  const importPattern = new RegExp(
+    `import\\s*\\{([^}]*)\\}\\s*from\\s*["']${escapeRegExp(moduleName)}["']`,
+  );
+  const specifiers = content.match(importPattern)?.[1];
+  if (!specifiers) return false;
+  const binding = specifiers
+    .split(",")
+    .map((specifier) => specifier.trim().split(/\s+as\s+/))
+    .find(([imported]) => imported === exportName);
+  if (!binding) return false;
+  const local = binding[1] ?? binding[0];
+  return new RegExp(`plugins\\s*:\\s*\\[[^\\]]*\\b${escapeRegExp(local)}\\s*\\(`).test(content);
+}
+
+/**
+ * A small subset check against >=5.29.0 <6 for the range forms projects declare. Anything else
+ * (catalog:, workspace:, unions, open upper bounds) is not supported, as in the CLI.
+ */
+export function isSupportedSvelteRange(range: string): boolean {
+  const value = range.trim();
+  const supported = (major: string, minor: string) => Number(major) === 5 && Number(minor) >= 29;
+  const caretOrTilde = value.match(/^[\^~]\s*v?(\d+)\.(\d+)(?:\.\d+)?(?:-[\w.]+)?$/);
+  if (caretOrTilde) return supported(caretOrTilde[1], caretOrTilde[2]);
+  const exact = value.match(/^=?\s*v?(\d+)\.(\d+)\.\d+$/);
+  if (exact) return supported(exact[1], exact[2]);
+  const bounded = value.match(/^>=\s*v?(\d+)\.(\d+)(?:\.\d+)?\s+<\s*v?6(?:\.0){0,2}$/);
+  return bounded ? supported(bounded[1], bounded[2]) : false;
+}
+
 interface HostDetection {
   framework: StarwindFramework | null;
   host: StarwindHost | null;
@@ -144,7 +192,11 @@ interface HostDetection {
  * Vite Vue host replaces a React host only when its host check passes. A Next.js app that
  * declares Svelte for a widget stays React.
  */
-function detectHost(cwd: string, deps: Record<string, unknown>): HostDetection {
+function detectHost(
+  cwd: string,
+  deps: Record<string, unknown>,
+  svelteRanges: string[],
+): HostDetection {
   const has = (name: string) => Boolean(deps[name]);
   const file = (path: string) => existsSync(resolve(cwd, path));
   const hasViteConfig = anyFile(cwd, VITE_CONFIG_FILES);
@@ -164,16 +216,24 @@ function detectHost(cwd: string, deps: Record<string, unknown>): HostDetection {
     : has("svelte") || has("@sveltejs/vite-plugin-svelte") || has("@astrojs/svelte")
       ? "vite-svelte"
       : null;
+  // The CLI also requires a declared Svelte range inside >=5.29.0 <6 and a Vite config that
+  // calls the official plugin in its plugins array.
+  const svelteRangeSupported =
+    svelteRanges.length > 0 && svelteRanges.every(isSupportedSvelteRange);
+  const viteConfig = readFirstFile(cwd, VITE_CONFIG_FILES);
   const svelteReady =
-    svelteHost === "sveltekit"
-      ? has("svelte") && has("vite") && hasViteConfig && file("src/routes") && file("src/app.html")
+    svelteRangeSupported &&
+    has("vite") &&
+    viteConfig !== null &&
+    (svelteHost === "sveltekit"
+      ? configCallsPlugin(viteConfig, "@sveltejs/kit/vite", "sveltekit") &&
+        file("src/routes") &&
+        file("src/app.html")
       : svelteHost === "vite-svelte" &&
-        has("svelte") &&
-        has("vite") &&
         has("@sveltejs/vite-plugin-svelte") &&
-        hasViteConfig &&
+        configCallsPlugin(viteConfig, "@sveltejs/vite-plugin-svelte", "svelte") &&
         hasMainEntry &&
-        file("src/App.svelte");
+        file("src/App.svelte"));
   if (svelteHost && svelteReady) return { framework: "svelte", host: svelteHost, islands: [] };
 
   const vueHost: StarwindHost | null =
@@ -267,7 +327,16 @@ export function inspectStarwindProject(
   const configPath = resolve(cwd, "starwind.config.json");
   const packageJson = existsSync(packagePath) ? readJson(packagePath) : null;
   const config = existsSync(configPath) ? readJson(configPath) : null;
-  const detection = detectHost(cwd, getDependencies(packageJson));
+  const svelteRanges = [
+    packageJson?.dependencies,
+    packageJson?.devDependencies,
+    packageJson?.optionalDependencies,
+    packageJson?.peerDependencies,
+  ].flatMap((field) => {
+    const range = asRecord(field)?.svelte;
+    return typeof range === "string" ? [range] : [];
+  });
+  const detection = detectHost(cwd, getDependencies(packageJson), svelteRanges);
   const configuredFramework = isStarwindFramework(config?.framework) ? config.framework : null;
   const components = config?.components;
   const hasConfigVersion = config !== null && "version" in config;
@@ -298,10 +367,27 @@ function stripPrefix(value: string, prefix: string): string | null {
   return value.startsWith(prefix) ? value.slice(prefix.length) : null;
 }
 
-function getSvelteKitMajor(cwd: string): number | null {
-  const range = getDependencies(readJson(resolve(cwd, "package.json")))["@sveltejs/kit"];
-  const match = typeof range === "string" ? range.match(/(\d+)/) : null;
+function majorFrom(value: unknown): number | null {
+  const match = typeof value === "string" ? value.match(/(\d+)/) : null;
   return match ? Number(match[1]) : null;
+}
+
+/** Installed package version first (walking up for workspaces), then the declared range. */
+function getPackageMajor(cwd: string, packageName: string): number | null {
+  const packageDir = findInstalledPackageDir(cwd, packageName);
+  const installed = packageDir
+    ? majorFrom(readJson(resolve(packageDir, "package.json"))?.version)
+    : null;
+  return (
+    installed ?? majorFrom(getDependencies(readJson(resolve(cwd, "package.json")))[packageName])
+  );
+}
+
+/** Nuxt 4 keeps app files under app/; a Nuxt 3 root layout keeps app.vue at the project root. */
+function getNuxtSourceRoot(cwd: string): string {
+  if (existsSync(resolve(cwd, "app", "app.vue"))) return "app/";
+  if (existsSync(resolve(cwd, "app.vue"))) return "";
+  return getPackageMajor(cwd, "nuxt") === 4 ? "app/" : "";
 }
 
 /**
@@ -318,13 +404,14 @@ export function getProjectStyledImportPath(
   const dir = (configured ?? project.componentDir)?.replace(/^\.\//, "").replace(/\/$/, "");
 
   if (project.detectedHost === "nuxt" && target === "vue") {
-    const base = dir ? (stripPrefix(dir, "app/") ?? dir) : "components/starwind";
+    const sourceRoot = getNuxtSourceRoot(project.cwd);
+    const base = dir ? (stripPrefix(dir, sourceRoot) ?? dir) : "components/starwind";
     return `~/${base}/${name}`;
   }
   if (project.detectedHost === "sveltekit" && target === "svelte") {
     const rest = stripPrefix(dir ?? "src/lib/starwind", "src/lib/");
     if (rest === null) return null;
-    return getSvelteKitMajor(project.cwd) === 3
+    return getPackageMajor(project.cwd, "@sveltejs/kit") === 3
       ? `#lib/${rest}/${name}/index.js`
       : `$lib/${rest}/${name}`;
   }

@@ -291,6 +291,50 @@ describe("starwindSearchTool", () => {
         "#lib/starwind/button/index.js",
       ],
       [
+        "SvelteKit 3 from the installed version with a catalog range",
+        {
+          "package.json": JSON.stringify({
+            devDependencies: { "@sveltejs/kit": "catalog:", svelte: "catalog:" },
+          }),
+          "node_modules/@sveltejs/kit/package.json": JSON.stringify({ version: "3.0.1" }),
+        },
+        "#lib/starwind/button/index.js",
+      ],
+      [
+        "SvelteKit 2 from the installed version over a 3.x range",
+        {
+          "package.json": JSON.stringify({ devDependencies: { "@sveltejs/kit": "^3.0.0" } }),
+          "node_modules/@sveltejs/kit/package.json": JSON.stringify({ version: "2.21.0" }),
+        },
+        "$lib/starwind/button",
+      ],
+      [
+        "Nuxt 3 root layout keeps an app/ component folder",
+        {
+          "package.json": JSON.stringify({ dependencies: { nuxt: "^3.17.0", vue: "^3.5.21" } }),
+          "app.vue": "<template />",
+          "starwind.config.json": JSON.stringify({
+            version: 2,
+            framework: "vue",
+            componentDir: "app/components/starwind",
+          }),
+        },
+        "~/app/components/starwind/button",
+      ],
+      [
+        "Nuxt 4 app layout",
+        {
+          "package.json": JSON.stringify({ dependencies: { nuxt: "^4.1.0", vue: "^3.5.21" } }),
+          "app/app.vue": "<template />",
+          "starwind.config.json": JSON.stringify({
+            version: 2,
+            framework: "vue",
+            componentDir: "app/components/starwind",
+          }),
+        },
+        "~/components/starwind/button",
+      ],
+      [
         "Quasar",
         {
           "package.json": JSON.stringify({

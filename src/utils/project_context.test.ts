@@ -6,6 +6,12 @@ import { describe, expect, it } from "vitest";
 
 import { inspectStarwindProject } from "./project_context.js";
 
+const VITE_SVELTE_CONFIG = [
+  'import { svelte as sveltePlugin } from "@sveltejs/vite-plugin-svelte";',
+  'import { defineConfig } from "vite";',
+  "export default defineConfig({ plugins: [sveltePlugin()] });",
+].join("\n");
+
 describe("inspectStarwindProject", () => {
   it("recognizes Astro config files even when the dependency signal is unavailable", () => {
     const cwd = mkdtempSync(join(tmpdir(), "starwind-project-context-"));
@@ -327,9 +333,8 @@ describe("inspectStarwindProject", () => {
         }),
       );
       mkdirSync(join(cwd, "src"));
-      for (const file of ["vite.config.ts", "src/main.ts", "src/App.svelte"]) {
-        writeFileSync(join(cwd, file), "");
-      }
+      for (const file of ["src/main.ts", "src/App.svelte"]) writeFileSync(join(cwd, file), "");
+      writeFileSync(join(cwd, "vite.config.ts"), VITE_SVELTE_CONFIG);
       expect(inspectStarwindProject(cwd)).toMatchObject({
         detectedFramework: "svelte",
         detectedHost: "vite-svelte",
@@ -337,5 +342,77 @@ describe("inspectStarwindProject", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
+  });
+
+  describe("CLI Svelte host checks", () => {
+    function viteSvelteProject(svelte: string, config: string, run: (cwd: string) => void) {
+      const cwd = mkdtempSync(join(tmpdir(), "starwind-project-svelte-check-"));
+      try {
+        writeFileSync(
+          join(cwd, "package.json"),
+          JSON.stringify({
+            dependencies: { next: "^16", react: "^19" },
+            devDependencies: { svelte, "@sveltejs/vite-plugin-svelte": "^6", vite: "^7" },
+          }),
+        );
+        mkdirSync(join(cwd, "src"));
+        for (const file of ["src/main.ts", "src/App.svelte"]) writeFileSync(join(cwd, file), "");
+        writeFileSync(join(cwd, "vite.config.ts"), config);
+        run(cwd);
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    }
+
+    it("keeps React when the Vite config does not call the official Svelte plugin", () => {
+      viteSvelteProject(
+        "^5.29.0",
+        'import { defineConfig } from "vite";\nexport default defineConfig({ plugins: [] });',
+        (cwd) => expect(inspectStarwindProject(cwd).detectedFramework).toBe("react"),
+      );
+    });
+
+    it.each(["^5.28.0", "^4.2.0", ">=5.29.0", "catalog:", "workspace:*"])(
+      "keeps React when the Svelte range %s is outside >=5.29.0 <6",
+      (range) => {
+        viteSvelteProject(range, VITE_SVELTE_CONFIG, (cwd) =>
+          expect(inspectStarwindProject(cwd).detectedFramework).toBe("react"),
+        );
+      },
+    );
+
+    it.each(["^5.29.0", "~5.30.1", "5.31.2", ">=5.29.0 <6"])(
+      "accepts the supported Svelte range %s",
+      (range) => {
+        viteSvelteProject(range, VITE_SVELTE_CONFIG, (cwd) =>
+          expect(inspectStarwindProject(cwd).detectedHost).toBe("vite-svelte"),
+        );
+      },
+    );
+
+    it("requires the sveltekit plugin for a SvelteKit host", () => {
+      const cwd = mkdtempSync(join(tmpdir(), "starwind-project-kit-check-"));
+      try {
+        writeFileSync(
+          join(cwd, "package.json"),
+          JSON.stringify({
+            dependencies: { react: "^19" },
+            devDependencies: { "@sveltejs/kit": "^2", svelte: "^5.29.0", vite: "^7" },
+          }),
+        );
+        mkdirSync(join(cwd, "src", "routes"), { recursive: true });
+        writeFileSync(join(cwd, "src", "app.html"), "");
+        writeFileSync(join(cwd, "vite.config.ts"), "export default {};");
+        expect(inspectStarwindProject(cwd).detectedFramework).toBe("react");
+
+        writeFileSync(
+          join(cwd, "vite.config.ts"),
+          'import { sveltekit } from "@sveltejs/kit/vite";\nexport default { plugins: [sveltekit()] };',
+        );
+        expect(inspectStarwindProject(cwd).detectedHost).toBe("sveltekit");
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    });
   });
 });
