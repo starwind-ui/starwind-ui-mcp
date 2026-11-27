@@ -183,6 +183,28 @@ describe("starwindDocsTool", () => {
     expect(button).toMatchObject({ pageType: "component" });
   });
 
+  it("matches a component's own name before another component's alias", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          Promise.resolve(
+            url.includes("ai-manifest")
+              ? jsonResponse(liveShapeAiManifestFixture)
+              : textResponse(`# ${url}`),
+          ),
+        ),
+    );
+
+    // The published accordion aliases include "Item".
+    const item = await starwindDocsTool.handler({ topic: "item" });
+    const explicit = await starwindDocsTool.handler({ topic: "item", surface: "component" });
+
+    expect(item.url).toBe("https://starwind.dev/docs/components/item.md");
+    expect(explicit.url).toBe("https://starwind.dev/docs/components/item.md");
+  });
+
   describe("installed package docs", () => {
     let cwd: string;
 

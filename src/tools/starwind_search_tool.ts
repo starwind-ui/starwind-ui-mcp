@@ -39,7 +39,14 @@ function normalizeQuery(query?: string): string | null {
   return value || null;
 }
 
-function scoreText(query: string, exact: string[], searchable: string[]): number {
+function scoreText(
+  query: string,
+  exact: string[],
+  searchable: string[],
+  primary: string[] = [],
+): number {
+  // An item's own name or title outranks an alias that other items share, such as "Item".
+  if (primary.some((value) => value.toLowerCase() === query)) return 120;
   if (exact.some((value) => value.toLowerCase() === query)) return 100;
   if (exact.some((value) => value.toLowerCase().includes(query))) return 60;
   if (searchable.some((value) => value.toLowerCase().includes(query))) return 25;
@@ -61,6 +68,7 @@ function searchStyled(
         query,
         [item.name, item.title, ...item.aliases],
         [item.description, ...item.publicExports, item.foundation?.label ?? ""],
+        [item.name, item.title],
       ),
     }))
     .filter(({ score }) => score > 0)
@@ -96,6 +104,7 @@ function searchPrimitives(
         query,
         [item.id, item.title, item.label, ...item.aliases],
         [item.runtime?.factory ?? ""],
+        [item.id, item.title, item.label],
       ),
     }))
     .filter(({ score }) => score > 0)
@@ -148,9 +157,7 @@ export const starwindSearchTool = {
     cwd: z
       .string()
       .optional()
-      .describe(
-        "Project directory used to detect the framework, existing Pro setup, and package docs.",
-      ),
+      .describe("Project directory used to detect the framework and existing Pro setup."),
     framework: z
       .enum([...STARWIND_FRAMEWORKS, "all"])
       .optional()
@@ -171,9 +178,7 @@ export const starwindSearchTool = {
     const limit = Math.min(Math.max(1, Math.floor(args.limit ?? DEFAULT_LIMIT)), MAX_LIMIT);
     const offset = Math.max(0, Math.floor(args.offset ?? 0));
     const metadataPromise = getStarwindManifest();
-    const project = inspectStarwindProject(args.cwd ?? process.cwd(), {
-      packageDocs: args.cwd !== undefined,
-    });
+    const project = inspectStarwindProject(args.cwd ?? process.cwd());
     const shouldSearchPro = surface !== "primitive";
     const proPromise = shouldSearchPro
       ? getStarwindProManifest()

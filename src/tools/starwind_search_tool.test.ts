@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { liveShapeAiManifestFixture } from "../../test/ai_manifest_live_shape_fixture.js";
 import {
   aiManifestFixture,
   jsonResponse,
@@ -78,6 +79,25 @@ describe("starwindSearchTool", () => {
       expect(image.styledComponents.results).toEqual([]);
     },
   );
+
+  it("ranks a component's own name above a shared alias", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          Promise.resolve(
+            jsonResponse(
+              url.includes("ai-manifest") ? liveShapeAiManifestFixture : proManifestFixture,
+            ),
+          ),
+        ),
+    );
+
+    const result = await starwindSearchTool.handler({ query: "item", surface: "styled" });
+
+    expect(result.styledComponents.results[0].name).toBe("item");
+  });
 
   it("uses the detected project framework for the Pro warning", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "starwind-search-svelte-"));

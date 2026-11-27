@@ -152,18 +152,36 @@ function normalizedSlug(url: string): string {
   return url.replace(/\/$/, "").split("/").pop()?.toLowerCase() ?? "";
 }
 
+function findByPriority<T>(
+  items: T[],
+  normalized: string,
+  keys: ((item: T) => string[])[],
+): T | undefined {
+  for (const key of keys) {
+    const match = items.find((item) =>
+      key(item).some((value) => value.toLowerCase() === normalized),
+    );
+    if (match) return match;
+  }
+  return undefined;
+}
+
 async function resolvePage(topic: string, surface: NonNullable<StarwindDocsArgs["surface"]>) {
   const normalized = topic.toLowerCase().trim();
   const alias = GUIDE_ALIASES[normalized] ?? normalized;
   const { manifest, source } = await getStarwindManifest();
-  const component = manifest.components.find((item) =>
-    [item.name, item.title, ...item.aliases].some((value) => value.toLowerCase() === normalized),
-  );
-  const primitive = manifest.layeredDocs.primitives.find((item) =>
-    [item.id, item.title, item.label, ...item.aliases].some(
-      (value) => value.toLowerCase() === normalized,
-    ),
-  );
+  // Exact names win over titles, and titles over aliases. Published aliases include shared part
+  // names such as "Item" or "Label", so an alias match must not shadow a component's own name.
+  const component = findByPriority(manifest.components, normalized, [
+    (item) => [item.name],
+    (item) => [item.title],
+    (item) => item.aliases,
+  ]);
+  const primitive = findByPriority(manifest.layeredDocs.primitives, normalized, [
+    (item) => [item.id],
+    (item) => [item.title, item.label],
+    (item) => item.aliases,
+  ]);
   const guide = manifest.guides.find(
     (item) =>
       item.name.toLowerCase() === alias ||
