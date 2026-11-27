@@ -62,8 +62,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "version": "changeset version",
-    "local:release": "pnpm build && changeset version && changeset publish"
+    "version": "changeset version && node scripts/sync-server-version.mjs",
+    "local:release": "pnpm build && pnpm run version && changeset publish"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
