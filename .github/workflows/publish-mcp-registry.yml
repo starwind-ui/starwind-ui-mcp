@@ -1,0 +1,115 @@
+name: Publish to MCP Registry
+
+# Publishes the version in server.json to the official MCP Registry after npm has that version.
+# GitHub OIDC proves the starwind-ui organization, so the job needs no token. A run with nothing
+# new to publish ends after one registry request. The schedule catches an npm release that
+# happens after the push to main.
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mcp-registry
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to MCP Registry
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MCP_PUBLISHER_VERSION: v1.8.9
+      SERVER_NAME: io.github.starwind-ui/mcp
+      REGISTRY_URL: https://registry.modelcontextprotocol.io
+    steps:
+      - name: Checkout Repo
+        # checkout@6.0.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Check versions
+        id: check
+        run: |
+          set -euo pipefail
+          version="$(jq -r .version server.json)"
+          package_name="$(jq -r .name package.json)"
+          package_version="$(jq -r .version package.json)"
+          if [ "$version" != "$package_version" ]; then
+            echo "::error::server.json names $version, but package.json is $package_version. Run pnpm run version."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          latest="$(curl --fail --silent --show-error "$REGISTRY_URL/v0.1/servers?search=$SERVER_NAME" \
+            | jq -r --arg name "$SERVER_NAME" '[.servers[] | select(.server.name == $name and ._meta["io.modelcontextprotocol.registry/official"].isLatest == true) | .server.version] | first // ""')"
+          if [ "$latest" = "$version" ]; then
+            echo "The MCP Registry already lists $SERVER_NAME $version."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The registry checks the npm package, so wait for npm to have this version.
+          for attempt in $(seq 1 10); do
+            if npm view "$package_name@$version" version >/dev/null 2>&1; then
+              echo "npm has $package_name@$version. The registry lists ${latest:-no version}."
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::notice::npm has no $package_name@$version yet. A later run publishes it to the MCP Registry."
+          echo "publish=false" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        if: steps.check.outputs.publish == 'true'
+        # sigstore/cosign-installer@v4.1.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+
+      - name: Download and verify mcp-publisher
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          archive="mcp-publisher_linux_amd64.tar.gz"
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail --location --silent --show-error --output "$archive" "$base_url/$archive"
+          curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base_url/$archive.sigstore.json"
+          cosign verify-blob \
+            --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+          rm -f "$archive" "$archive.sigstore.json"
+
+      - name: Authenticate to MCP Registry
+        if: steps.check.outputs.publish == 'true'
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server to MCP Registry
+        if: steps.check.outputs.publish == 'true'
+        run: ./mcp-publisher publish
+
+      - name: Confirm the registry entry
+        if: steps.check.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 10); do
+            latest="$(curl --fail --silent --show-error "$REGISTRY_URL/v0.1/servers?search=$SERVER_NAME" \
+              | jq -r --arg name "$SERVER_NAME" '[.servers[] | select(.server.name == $name and ._meta["io.modelcontextprotocol.registry/official"].isLatest == true) | .server.version] | first // ""')"
+            if [ "$latest" = "$VERSION" ]; then
+              echo "The MCP Registry lists $SERVER_NAME $VERSION as the latest version."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::The MCP Registry still lists ${latest:-no version} as the latest version, not $VERSION."
+          exit 1
