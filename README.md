@@ -81,7 +81,7 @@ Tool calls return both readable JSON text and MCP `structuredContent`.
 - Pro search, setup, and installs work in every framework. Starwind Pro blocks are Astro components. For a React, Vue, or Svelte target, results that include Pro guidance or Pro blocks add `proFrameworkWarning`: use an Astro host for the block, or port the block. `starwind_search` adds it only when it returns Pro blocks. `proUpgrade.newProjectCommand` uses the selected or detected framework.
 - Migration is interactive by default. Set `yes: true` only when backup-and-overwrite behavior is intended.
 - Package-manager and project context are detected locally when possible, and add commands pass the resolved package manager to the CLI. No tool executes the generated command.
-- The `packageManager` input accepts `npm`, `pnpm`, `yarn`, or `bun`. Detection checks lockfiles in the CLI order: `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `package-lock.json`. Bun projects get `bunx starwind@latest` commands. With `cwd`, `starwind_search` commands use the project's runner too.
+- The `packageManager` input accepts `npm`, `pnpm`, `yarn`, or `bun`. Detection checks lockfiles in the CLI order: `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `package-lock.json`. It walks up from `cwd` to the nearest folder with a lockfile or a `packageManager` field, so workspace members use the workspace root lockfile. Bun projects get `bunx starwind@latest` commands. With `cwd`, `starwind_search` commands use the project's runner too.
 
 ## Upgrading from free to Pro
 

@@ -12,4 +12,4 @@ When you pass `cwd`, project context lists the docs that ship in installed `@sta
 
 With `cwd`, styled search results add `projectImportPath`, such as `~/components/starwind/button` in Nuxt or `$lib/starwind/button` in SvelteKit 2. Search commands use the project's package manager runner.
 
-Add Bun support. The `packageManager` input accepts `bun`. A project with `bun.lock` or `bun.lockb` is detected as Bun, and generated commands use `bunx starwind@latest`.
+Add Bun support. The `packageManager` input accepts `bun`. A project with `bun.lock` or `bun.lockb` is detected as Bun, and generated commands use `bunx starwind@latest`. In a workspace member, detection uses the nearest lockfile or `packageManager` field in a parent folder.
