@@ -7,10 +7,28 @@ export function getDlxCommand(packageManager: PackageManager): string {
       return "pnpm dlx";
     case "yarn":
       return "yarn dlx";
+    case "bun":
+      return "bunx";
     case "npm":
     default:
       return "npx";
   }
+}
+
+/**
+ * The framework to pass to `starwind init`. A detected Vue host needs an explicit
+ * `--framework vue`: below Vue 3.5.21 the CLI marks the Vue target "configurable", and only an
+ * explicit target reaches the CLI's Vue upgrade offer. Other hosts keep CLI auto-detection.
+ */
+export function getInitFramework(
+  explicit: StarwindFramework | undefined,
+  project: {
+    configuredFramework: StarwindFramework | null;
+    detectedFramework: StarwindFramework | null;
+  },
+): StarwindFramework | undefined {
+  const projectFramework = project.configuredFramework ?? project.detectedFramework;
+  return explicit ?? (projectFramework === "vue" ? "vue" : undefined);
 }
 
 export function getInitCommand(

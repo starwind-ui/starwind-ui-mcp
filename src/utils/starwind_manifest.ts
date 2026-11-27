@@ -1,9 +1,20 @@
 import { z } from "zod";
 
-export type StarwindFramework = "astro" | "react";
+export const STARWIND_FRAMEWORKS = ["astro", "react", "vue", "svelte"] as const;
+export type StarwindFramework = (typeof STARWIND_FRAMEWORKS)[number];
+export type StarwindFrameworkLabel = "Astro" | "React" | "Vue" | "Svelte";
 export type StarwindMetadataSource = "network" | "cache" | "fallback";
 
-const FRAMEWORKS = ["astro", "react"] as const;
+export const STARWIND_FRAMEWORK_LABELS: Record<StarwindFramework, StarwindFrameworkLabel> = {
+  astro: "Astro",
+  react: "React",
+  vue: "Vue",
+  svelte: "Svelte",
+};
+
+export function isStarwindFramework(value: unknown): value is StarwindFramework {
+  return typeof value === "string" && (STARWIND_FRAMEWORKS as readonly string[]).includes(value);
+}
 const AI_MANIFEST_URL = "https://starwind.dev/ai-manifest.json";
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 5000;
@@ -15,7 +26,11 @@ const componentSchema = z
     title: z.string(),
     description: z.string().default(""),
     installable: z.boolean(),
-    implementationTargets: z.array(z.enum(FRAMEWORKS)),
+    // Unknown future targets (and runtimeCli-only targets such as legacy-astro) are dropped
+    // instead of failing validation, so a newer manifest keeps serving the known frameworks.
+    implementationTargets: z
+      .array(z.string())
+      .transform((targets) => targets.filter(isStarwindFramework)),
     publicImportPath: z.string(),
     installCommand: z.string(),
     updateCommand: z.string(),
@@ -39,13 +54,18 @@ const primitiveSchema = z
       .array(
         z
           .object({
-            framework: z.enum(["Astro", "React"]),
+            framework: z.string(),
             packageName: z.string(),
             importSource: z.string(),
           })
           .passthrough(),
       )
-      .default([]),
+      .default([])
+      .transform((usages) =>
+        usages.filter((usage): usage is typeof usage & { framework: StarwindFrameworkLabel } =>
+          isStarwindFramework(usage.framework.toLowerCase()),
+        ),
+      ),
     runtime: z
       .object({
         factory: z.string(),
@@ -115,6 +135,7 @@ const FALLBACK_COMPONENTS = [
   "button-group",
   "card",
   "carousel",
+  "chart",
   "checkbox",
   "checkbox-group",
   "collapsible",
@@ -167,6 +188,7 @@ const FALLBACK_PRIMITIVES = [
   "avatar",
   "button",
   "carousel",
+  "chart",
   "checkbox",
   "checkbox-group",
   "collapsible",
@@ -206,16 +228,32 @@ const FALLBACK_GUIDES = [
   ["primitives", "Primitives", "/docs/getting-started/primitives"],
   ["theming", "Theming", "/docs/getting-started/theming"],
   ["dark-mode", "Dark Mode", "/docs/getting-started/dark-mode"],
+  ["manual-setup", "Manual Setup", "/docs/getting-started/manual-setup"],
   ["migration", "Migration Guide", "/docs/getting-started/migration"],
+  ["rtl", "RTL", "/docs/getting-started/rtl"],
+  ["svelte", "Svelte Usage", "/docs/getting-started/svelte"],
   ["cli", "Command Line Interface", "/docs/getting-started/cli"],
   ["ai", "AI Integration", "/docs/getting-started/ai"],
   ["skills", "Skills", "/docs/getting-started/skills"],
   ["mcp", "MCP Server", "/docs/getting-started/mcp"],
   ["astro", "Astro Installation", "/docs/frameworks/astro"],
+  ["astro-react", "Astro + React Installation", "/docs/frameworks/astro-react"],
+  ["astro-vue", "Astro + Vue Installation", "/docs/frameworks/astro-vue"],
+  ["astro-svelte", "Astro + Svelte Installation", "/docs/frameworks/astro-svelte"],
   ["vite-react", "Vite React Installation", "/docs/frameworks/vite-react"],
   ["nextjs", "Next.js Installation", "/docs/frameworks/nextjs"],
   ["tanstack-start", "TanStack Start Installation", "/docs/frameworks/tanstack-start"],
   ["react-router", "React Router Installation", "/docs/frameworks/react-router"],
+  ["vite-vue", "Vite Vue Installation", "/docs/frameworks/vite-vue"],
+  ["nuxt", "Nuxt Installation", "/docs/frameworks/nuxt"],
+  ["quasar", "Quasar Installation", "/docs/frameworks/quasar"],
+  [
+    "laravel-inertia-vue",
+    "Laravel Inertia Vue Installation",
+    "/docs/frameworks/laravel-inertia-vue",
+  ],
+  ["vite-svelte", "Vite Svelte Installation", "/docs/frameworks/vite-svelte"],
+  ["sveltekit", "SvelteKit Installation", "/docs/frameworks/sveltekit"],
 ] as const;
 
 function titleFromSlug(slug: string): string {
@@ -228,7 +266,7 @@ function titleFromSlug(slug: string): string {
 function buildFallbackManifest(): StarwindManifest {
   const components = FALLBACK_COMPONENTS.map((name) => {
     const title = titleFromSlug(name);
-    const targets: StarwindFramework[] = name === "image" ? ["astro"] : ["astro", "react"];
+    const targets: StarwindFramework[] = name === "image" ? ["astro"] : [...STARWIND_FRAMEWORKS];
     return {
       name,
       title,
@@ -251,18 +289,11 @@ function buildFallbackManifest(): StarwindManifest {
     docsUrl: `https://starwind.dev/docs/primitives/${id}/`,
     markdownUrl: `https://starwind.dev/docs/primitives/${id}.md`,
     aliases: [id, titleFromSlug(id)],
-    adapterUsage: [
-      {
-        framework: "Astro" as const,
-        packageName: "@starwind-ui/astro",
-        importSource: `@starwind-ui/astro/${id}`,
-      },
-      {
-        framework: "React" as const,
-        packageName: "@starwind-ui/react",
-        importSource: `@starwind-ui/react/${id}`,
-      },
-    ],
+    adapterUsage: STARWIND_FRAMEWORKS.map((framework) => ({
+      framework: STARWIND_FRAMEWORK_LABELS[framework],
+      packageName: `@starwind-ui/${framework}`,
+      importSource: `@starwind-ui/${framework}/${id}`,
+    })),
   }));
   const guides = FALLBACK_GUIDES.map(([name, title, path]) => ({
     name,
@@ -274,7 +305,10 @@ function buildFallbackManifest(): StarwindManifest {
   }));
   return manifestSchema.parse({
     version: 2,
-    runtimeCli: { configVersion: 2, implementationTargets: ["legacy-astro", "astro", "react"] },
+    runtimeCli: {
+      configVersion: 2,
+      implementationTargets: ["legacy-astro", ...STARWIND_FRAMEWORKS],
+    },
     components,
     guides,
     layeredDocs: {

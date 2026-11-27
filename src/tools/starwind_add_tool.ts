@@ -6,13 +6,19 @@ import {
   getDlxCommand,
   getExistingProjectProSetupCommand,
   getInitCommand,
+  getInitFramework,
 } from "../utils/starwind_commands.js";
 import {
   getStarwindManifest,
   resetStarwindManifestCache,
+  STARWIND_FRAMEWORKS,
   type StarwindFramework,
 } from "../utils/starwind_manifest.js";
-import { getProDiscovery, getProUpgrade } from "../utils/starwind_pro_guidance.js";
+import {
+  getProDiscovery,
+  getProFrameworkWarning,
+  getProUpgrade,
+} from "../utils/starwind_pro_guidance.js";
 import {
   getStarwindProManifest,
   resetStarwindProManifestCache,
@@ -79,20 +85,23 @@ function parseProInstallItems(command: string, expectedBlock: string): string[] 
 export const starwindAddTool = {
   name: "starwind_add",
   description:
-    "Generates validated Starwind UI v3 install commands for styled components, vendored primitives, or Starwind Pro blocks, with optional Astro or React targeting.",
+    "Generates validated Starwind UI v3 install commands for styled components, vendored primitives, or Starwind Pro blocks, with optional Astro, React, Vue, or Svelte targeting. Pro blocks install in every framework and are Astro components.",
   inputSchema: {
     components: z
       .array(z.string())
       .min(1, "At least one component must be specified")
       .describe("Names to install, or a single 'all'/'--all' item."),
     surface: z.enum(["styled", "primitive"]).optional().describe("Defaults to styled."),
-    framework: z.enum(["astro", "react"]).optional().describe("Optional framework override."),
+    framework: z
+      .enum(STARWIND_FRAMEWORKS)
+      .optional()
+      .describe("Optional framework override: astro, react, vue, or svelte."),
     to: z.string().optional().describe("Primitive destination passed to --to."),
     overwrite: z.boolean().optional().describe("Allow the CLI to overwrite existing files."),
     init: z.boolean().optional().describe("Prepend project initialization for a new setup."),
     pro: z.boolean().optional().describe("Configure paid Pro authorization during optional init."),
     cwd: z.string().optional(),
-    packageManager: z.enum(["npm", "pnpm", "yarn"]).optional(),
+    packageManager: z.enum(["npm", "pnpm", "yarn", "bun"]).optional(),
   },
   outputSchema: {
     result: z.record(z.unknown()).describe("Structured Starwind installation result."),
@@ -128,16 +137,13 @@ export const starwindAddTool = {
     }
 
     const cwd = args.cwd ?? process.cwd();
-    const project = inspectStarwindProject(cwd);
+    const project = inspectStarwindProject(cwd, { packageDocs: args.cwd !== undefined });
     const effectiveFramework =
       args.framework ?? project.configuredFramework ?? project.detectedFramework;
-    if (effectiveFramework === "react" && (proBlocks.length || args.pro === true)) {
-      return {
-        success: false,
-        error: "Starwind Pro blocks and paid authorization currently target Astro, not React",
-        project,
-      };
-    }
+    const proFrameworkWarning =
+      proBlocks.length || args.pro === true
+        ? getProFrameworkWarning(effectiveFramework)
+        : undefined;
 
     const pmInfo = args.packageManager
       ? { name: args.packageManager, source: "user-specified" as const }
@@ -245,9 +251,10 @@ export const starwindAddTool = {
     const paidAuthorizationRequested = args.pro === true;
     const needsProGuidance = paidAuthorizationRequested || paidBlocks.length > 0;
     const upgradeRequired = needsProGuidance && !project.proRegistryConfigured;
+    const initFramework = getInitFramework(args.framework, project);
     const setupCommand = args.init
       ? getInitCommand(dlx, {
-          framework: args.framework,
+          framework: initFramework,
           pro: upgradeRequired || paidAuthorizationRequested,
         })
       : getExistingProjectProSetupCommand(dlx);
@@ -262,7 +269,7 @@ export const starwindAddTool = {
       if (args.init) {
         commands.push(
           getInitCommand(dlx, {
-            framework: args.framework,
+            framework: initFramework,
             pro: paidAuthorizationRequested,
           }),
         );
@@ -321,11 +328,13 @@ export const starwindAddTool = {
               configured: project.proRegistryConfigured,
               setupCommand,
               deferredCommand,
+              framework: effectiveFramework,
             }),
           }
         : proBlocks.length
           ? { proDiscovery: getProDiscovery(dlx) }
           : {}),
+      ...(proFrameworkWarning ? { proFrameworkWarning } : {}),
     };
   },
 };

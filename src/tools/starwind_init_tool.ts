@@ -2,9 +2,13 @@ import { z } from "zod";
 
 import { detectPackageManager, type PackageManager } from "../utils/package_manager.js";
 import { inspectStarwindProject } from "../utils/project_context.js";
-import { getDlxCommand, getInitCommand } from "../utils/starwind_commands.js";
-import type { StarwindFramework } from "../utils/starwind_manifest.js";
-import { getProDiscovery, getProUpgrade } from "../utils/starwind_pro_guidance.js";
+import { getDlxCommand, getInitCommand, getInitFramework } from "../utils/starwind_commands.js";
+import { STARWIND_FRAMEWORKS, type StarwindFramework } from "../utils/starwind_manifest.js";
+import {
+  getProDiscovery,
+  getProFrameworkWarning,
+  getProUpgrade,
+} from "../utils/starwind_pro_guidance.js";
 
 interface StarwindInitArgs {
   cwd?: string;
@@ -12,6 +16,15 @@ interface StarwindInitArgs {
   framework?: StarwindFramework;
   pro?: boolean;
 }
+
+const FRAMEWORK_REQUIREMENTS: Record<StarwindFramework, string> = {
+  astro: "Existing Astro >=5 project",
+  react: "Existing React >=18 project with React DOM >=18",
+  vue: "Existing Vue >=3.5.21 project. Init offers the Vue upgrade when the project uses an older Vue 3 version.",
+  svelte: "Existing Svelte >=5.29.0 <6 project",
+};
+const ANY_FRAMEWORK_REQUIREMENT =
+  "Existing Astro >=5, React >=18, Vue >=3.5.21, or Svelte >=5.29.0 <6 project";
 
 function nodeMeetsV3Requirement(version: string): boolean {
   const [major, minor] = version.split(".").map(Number);
@@ -21,14 +34,17 @@ function nodeMeetsV3Requirement(version: string): boolean {
 export const starwindInitTool = {
   name: "starwind_init",
   description:
-    "Generates a Starwind UI v3 initialization command for an existing Astro or React project. The CLI auto-detects the framework unless an override is provided. Paid Pro authorization is opt-in and currently targets Astro.",
+    "Generates a Starwind UI v3 initialization command for an existing Astro, React, Vue, or Svelte project. The CLI auto-detects the framework unless an override is provided. Paid Pro authorization is opt-in and works in every framework. Pro blocks are Astro components.",
   inputSchema: {
     cwd: z
       .string()
       .optional()
       .describe("Project directory used for package manager and framework detection."),
-    packageManager: z.enum(["npm", "pnpm", "yarn"]).optional(),
-    framework: z.enum(["astro", "react"]).optional().describe("Optional CLI framework override."),
+    packageManager: z.enum(["npm", "pnpm", "yarn", "bun"]).optional(),
+    framework: z
+      .enum(STARWIND_FRAMEWORKS)
+      .optional()
+      .describe("Optional CLI framework override: astro, react, vue, or svelte."),
     pro: z
       .boolean()
       .optional()
@@ -40,7 +56,7 @@ export const starwindInitTool = {
 
   async handler(args: StarwindInitArgs = {}): Promise<Record<string, unknown>> {
     const cwd = args.cwd ?? process.cwd();
-    const project = inspectStarwindProject(cwd);
+    const project = inspectStarwindProject(cwd, { packageDocs: args.cwd !== undefined });
     const pmInfo = args.packageManager
       ? { name: args.packageManager, source: "user-specified" as const }
       : { ...detectPackageManager({ cwd }), source: "detected" as const };
@@ -48,17 +64,11 @@ export const starwindInitTool = {
     const isPro = args.pro === true;
     const effectiveFramework =
       args.framework ?? project.configuredFramework ?? project.detectedFramework;
-    if (isPro && effectiveFramework === "react") {
-      return {
-        success: false,
-        error:
-          "Paid Starwind Pro blocks currently target Astro; initialize React without pro: true.",
-        framework: effectiveFramework,
-        project,
-      };
-    }
 
-    const command = getInitCommand(dlxCommand, { framework: args.framework, pro: isPro });
+    const command = getInitCommand(dlxCommand, {
+      framework: getInitFramework(args.framework, project),
+      pro: isPro,
+    });
     const warnings: string[] = [];
     if (!nodeMeetsV3Requirement(project.nodeVersion)) {
       warnings.push(
@@ -66,10 +76,14 @@ export const starwindInitTool = {
       );
     }
     if (!project.packageJsonFound)
-      warnings.push("Run this from an existing Astro or React project root.");
+      warnings.push("Run this from an existing Astro, React, Vue, or Svelte project root.");
     if (project.configVersion === 1) {
       warnings.push("A legacy Starwind config was detected. Use starwind_migrate instead of init.");
     }
+
+    // Pro discovery or upgrade guidance is always part of the result, so the field always applies.
+    const proFrameworkWarning = getProFrameworkWarning(effectiveFramework);
+    if (proFrameworkWarning && isPro) warnings.push(proFrameworkWarning);
 
     const hasConfiguredFramework = !args.framework && project.configuredFramework;
     return {
@@ -90,7 +104,9 @@ export const starwindInitTool = {
       project,
       requirements: {
         node: ">=22.12.0",
-        framework: "Existing Astro >=5 or React >=18 project",
+        framework: effectiveFramework
+          ? FRAMEWORK_REQUIREMENTS[effectiveFramework]
+          : ANY_FRAMEWORK_REQUIREMENT,
         styling: "Tailwind CSS v4 (configured by Starwind init)",
       },
       warnings,
@@ -101,21 +117,21 @@ export const starwindInitTool = {
       ],
       cliFlags: {
         "--defaults": "Accept default configuration values after project detection.",
-        "--framework": "Override framework detection with astro or react.",
-        "--pro": "Configure paid Starwind Pro authorization for Astro blocks.",
+        "--framework": "Override framework detection with astro, react, vue, or svelte.",
+        "--pro": "Configure paid Starwind Pro authorization. Pro blocks are Astro components.",
       },
-      ...(effectiveFramework !== "react"
-        ? isPro
-          ? {
-              proUpgrade: getProUpgrade({
-                dlxCommand,
-                reason: "Paid Starwind Pro authorization was requested for this Astro project.",
-                configured: project.proRegistryConfigured,
-                setupCommand: command,
-              }),
-            }
-          : { proDiscovery: getProDiscovery(dlxCommand) }
-        : {}),
+      ...(isPro
+        ? {
+            proUpgrade: getProUpgrade({
+              dlxCommand,
+              reason: "Paid Starwind Pro authorization was requested for this project.",
+              configured: project.proRegistryConfigured,
+              setupCommand: command,
+              framework: effectiveFramework,
+            }),
+          }
+        : { proDiscovery: getProDiscovery(dlxCommand) }),
+      ...(proFrameworkWarning ? { proFrameworkWarning } : {}),
     };
   },
 };

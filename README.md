@@ -13,7 +13,7 @@
   <code>io.github.starwind-ui/mcp</code>
 </p>
 
-A TypeScript Model Context Protocol server for [Starwind UI v3](https://starwind.dev/) and [Starwind Pro](https://pro.starwind.dev/). It gives AI clients current, framework-aware guidance for Astro and React projects.
+A TypeScript Model Context Protocol server for [Starwind UI v3](https://starwind.dev/) and [Starwind Pro](https://pro.starwind.dev/). It gives AI clients current guidance for Astro, React, Vue, and Svelte projects.
 
 ## Quick start
 
@@ -49,20 +49,20 @@ Starwind UI v3 has three related surfaces. The MCP keeps them distinct:
 
 | Surface | What it represents | MCP behavior |
 | --- | --- | --- |
-| Styled components | Copy-owned UI components with Astro and/or React implementations | Search and install with `starwind_search` and `starwind_add` |
-| Primitives | Lower-level Astro and React adapters, backed by Starwind Runtime where applicable | Search with `surface: "primitive"`; install with the v3 `primitives add` command |
+| Styled components | Copy-owned UI components with Astro, React, Vue, and Svelte implementations | Search and install with `starwind_search` and `starwind_add` |
+| Primitives | Lower-level Astro, React, Vue, and Svelte adapters, backed by Starwind Runtime where applicable | Search with `surface: "primitive"`; install with the v3 `primitives add` command |
 | Runtime | Framework-neutral behavior APIs | Fetch with `starwind_docs` using the Runtime topic or surface |
 
-The server validates these layers against the versioned [`ai-manifest.json`](https://starwind.dev/ai-manifest.json), caches validated data, and falls back to a bundled v3 snapshot if the site is unavailable.
+The server validates these layers against the versioned [`ai-manifest.json`](https://starwind.dev/ai-manifest.json), caches validated data, and falls back to a bundled v3 snapshot if the site is unavailable. Validation drops framework targets that this version does not know, so a newer manifest still works.
 
 ## Tools
 
 | Tool | Purpose |
 | --- | --- |
-| `starwind_init` | Generate v3 initialization commands for an existing Astro or React project. Pro is opt-in. |
-| `starwind_add` | Validate requests and generate installation or deferred-install commands for styled components, primitives, or Astro-only Pro blocks. |
+| `starwind_init` | Generate v3 initialization commands for an existing Astro, React, Vue, or Svelte project. Pro is opt-in. |
+| `starwind_add` | Validate requests and generate installation or deferred-install commands for styled components, primitives, or Pro blocks. |
 | `starwind_search` | Search styled components, primitives, and Pro blocks with framework metadata and filters. |
-| `starwind_docs` | Resolve exact component, primitive, Runtime, migration, and framework documentation. |
+| `starwind_docs` | Resolve exact component, primitive, Runtime, migration, and framework documentation. With `cwd`, it also points to the installed package docs page. |
 | `starwind_migrate` | Inspect a project and generate safe, interactive-first v2-to-v3 migration guidance. |
 
 Tool calls return both readable JSON text and MCP `structuredContent`.
@@ -70,17 +70,24 @@ Tool calls return both readable JSON text and MCP `structuredContent`.
 ## Requirements and behavior
 
 - Generated v3 CLI commands require Node.js 22.12.0 or newer.
-- `starwind_init` targets existing Astro 5+ or React 18+ projects and lets the CLI auto-detect the framework unless `framework` is supplied.
-- Free `@starwind-pro/*` catalog blocks work after ordinary initialization. Paid blocks require explicit authorization; pass `pro: true` only when it is required.
-- Starwind Pro blocks currently target Astro. React searches omit them, and React add requests reject them explicitly.
+- `starwind_init` targets existing Astro 5+, React 18+, Vue 3.5.21+, or Svelte 5.29+ (below 6) projects. The CLI auto-detects the framework unless you supply `framework`.
+- The `framework` input accepts `astro`, `react`, `vue`, or `svelte`. `starwind_search` also accepts `all`.
+- Project context detects Astro (with React, Vue, or Svelte islands), Vite React, Next.js, React Router, TanStack Start, Vite Vue, Nuxt, Quasar, Laravel with Inertia Vue, Vite Svelte, and SvelteKit. It also reads `framework` and `componentDirs` from `starwind.config.json`.
+- When you pass `cwd`, project context lists the docs that ship in installed `@starwind-ui/*` packages (1.6.0 and newer) under `packageDocs`. The lookup finds packages the way Node does, so packages hoisted to a workspace root are found too.
+- With `cwd`, `starwind_docs` returns `installedDocs`, the page that matches the installed version. This works for a Primitive topic, a Runtime topic (`init-starwind`, `raw-html`, `theme`, or a controller), and a styled component that has a Primitive with the same name. If the website is unavailable, the tool returns the installed page.
+- With `cwd`, styled search results add `projectImportPath` when the project shows its host or component folder. Examples: `~/components/starwind/button` in Nuxt and `$lib/starwind/button` in SvelteKit 2. `publicImportPath` keeps the default path.
+- A detected Vue host gets `init --framework vue`. Only an explicit Vue target reaches the CLI's Vue upgrade offer when the project uses Vue below 3.5.21.
+- Free `@starwind-pro/*` catalog blocks work after ordinary initialization. Paid blocks require explicit authorization. Pass `pro: true` only when it is required.
+- Pro search, setup, and installs work in every framework. Starwind Pro blocks are Astro components. For a React, Vue, or Svelte target, results that include Pro guidance or Pro blocks add `proFrameworkWarning`: use an Astro host for the block, or port the block. `starwind_search` adds it only when it returns Pro blocks. `proUpgrade.newProjectCommand` uses the selected or detected framework.
 - Migration is interactive by default. Set `yes: true` only when backup-and-overwrite behavior is intended.
 - Package-manager and project context are detected locally when possible, and add commands pass the resolved package manager to the CLI. No tool executes the generated command.
+- The `packageManager` input accepts `npm`, `pnpm`, `yarn`, or `bun`. Detection checks lockfiles in the CLI order: `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `package-lock.json`. It walks up from `cwd` to the nearest folder with a lockfile or a `packageManager` field, so workspace members use the workspace root lockfile. Bun projects get `bunx starwind@latest` commands. With `cwd`, `starwind_search` commands use the project's runner too.
 
 ## Upgrading from free to Pro
 
 The MCP keeps Pro discoverable without forcing paid setup. Search results link to the Pro catalog, free Pro blocks remain directly installable, and paid results include a structured `proUpgrade` path with purchase and installation links.
 
-For an existing Astro project, the MCP recommends:
+For an existing project, the MCP recommends:
 
 ```bash
 pnpm dlx starwind@latest setup --yes

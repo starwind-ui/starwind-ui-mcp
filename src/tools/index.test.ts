@@ -34,6 +34,39 @@ describe("v3 MCP registration", () => {
     }
   });
 
+  it("advertises Astro, React, Vue, and Svelte framework inputs", async () => {
+    const client = await createConnectedClient();
+    const { tools } = await client.listTools();
+    const property = (tool: string, name: string) =>
+      (tools.find((item) => item.name === tool)?.inputSchema.properties ?? {})[name] as
+        { enum?: string[] } | undefined;
+
+    expect(property("starwind_init", "framework")?.enum).toEqual([
+      "astro",
+      "react",
+      "vue",
+      "svelte",
+    ]);
+    expect(property("starwind_add", "framework")?.enum).toEqual([
+      "astro",
+      "react",
+      "vue",
+      "svelte",
+    ]);
+    expect(property("starwind_search", "framework")?.enum).toEqual([
+      "astro",
+      "react",
+      "vue",
+      "svelte",
+      "all",
+    ]);
+    expect(property("starwind_docs", "cwd")).toBeDefined();
+    for (const tool of ["starwind_init", "starwind_add", "starwind_migrate"]) {
+      expect(property(tool, "packageManager")?.enum).toEqual(["npm", "pnpm", "yarn", "bun"]);
+    }
+    expect(property("starwind_migrate", "framework")).toBeUndefined();
+  });
+
   it("returns matching human-readable and structured tool results", async () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
     const client = await createConnectedClient();

@@ -16,7 +16,7 @@ export const starwindMigrateTool = {
     "Generates the safe Starwind UI v3 migration command for a legacy Astro project. Interactive migration is the default; non-interactive overwrite behavior must be explicitly requested.",
   inputSchema: {
     cwd: z.string().optional().describe("Legacy Starwind project directory to inspect."),
-    packageManager: z.enum(["npm", "pnpm", "yarn"]).optional(),
+    packageManager: z.enum(["npm", "pnpm", "yarn", "bun"]).optional(),
     yes: z
       .boolean()
       .optional()
@@ -28,7 +28,7 @@ export const starwindMigrateTool = {
 
   async handler(args: StarwindMigrateArgs = {}): Promise<Record<string, unknown>> {
     const cwd = args.cwd ?? process.cwd();
-    const project = inspectStarwindProject(cwd);
+    const project = inspectStarwindProject(cwd, { packageDocs: args.cwd !== undefined });
     const pmInfo = args.packageManager
       ? { name: args.packageManager, source: "user-specified" as const }
       : { ...detectPackageManager({ cwd }), source: "detected" as const };

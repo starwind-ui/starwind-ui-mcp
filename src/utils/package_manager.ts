@@ -1,10 +1,10 @@
-import { existsSync } from "fs";
-import { resolve } from "path";
+import { existsSync, readFileSync } from "fs";
+import { dirname, resolve } from "path";
 
 /**
  * Represents a supported package manager
  */
-export type PackageManager = "npm" | "yarn" | "pnpm";
+export type PackageManager = "npm" | "yarn" | "pnpm" | "bun";
 
 /**
  * Configuration options for package manager detection
@@ -35,10 +35,12 @@ export interface PackageManagerInfo {
 /**
  * Map of package managers to their lock files
  */
-const LOCK_FILES: Record<PackageManager, string> = {
-  npm: "package-lock.json",
-  yarn: "yarn.lock",
-  pnpm: "pnpm-lock.yaml",
+const LOCK_FILES: Record<PackageManager, string[]> = {
+  npm: ["package-lock.json"],
+  yarn: ["yarn.lock"],
+  pnpm: ["pnpm-lock.yaml"],
+  // Bun 1.2 and newer write bun.lock. Older projects can still have bun.lockb.
+  bun: ["bun.lock", "bun.lockb"],
 };
 
 /**
@@ -63,7 +65,36 @@ const PACKAGE_MANAGER_COMMANDS: Record<PackageManager, Omit<PackageManagerInfo, 
     removeCmd: "pnpm remove",
     runCmd: "pnpm",
   },
+  bun: {
+    installCmd: "bun install",
+    addCmd: "bun add",
+    removeCmd: "bun remove",
+    runCmd: "bun run",
+  },
 };
+
+const PACKAGE_MANAGER_ORDER: PackageManager[] = ["pnpm", "yarn", "bun", "npm"];
+
+function readPackageManagerField(directory: string): PackageManager | null {
+  const packageJsonPath = resolve(directory, "package.json");
+  if (!existsSync(packageJsonPath)) return null;
+  try {
+    const field = (
+      JSON.parse(readFileSync(packageJsonPath, "utf8")) as { packageManager?: unknown }
+    ).packageManager;
+    const name = typeof field === "string" ? field.split("@")[0] : "";
+    return PACKAGE_MANAGER_ORDER.find((manager) => manager === name) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function detectInDirectory(directory: string): PackageManager | null {
+  for (const pm of PACKAGE_MANAGER_ORDER) {
+    if (LOCK_FILES[pm].some((lockFile) => existsSync(resolve(directory, lockFile)))) return pm;
+  }
+  return readPackageManagerField(directory);
+}
 
 /**
  * Detects the package manager used in the project
@@ -87,26 +118,20 @@ const PACKAGE_MANAGER_COMMANDS: Record<PackageManager, Omit<PackageManagerInfo, 
 export function detectPackageManager(options: PackageManagerOptions = {}): PackageManagerInfo {
   const { cwd = process.cwd(), defaultManager = "npm" } = options;
 
-  // Determine priorities for checking lock files
-  const packageManagers: PackageManager[] = ["pnpm", "yarn", "npm"];
-
-  // Detected package managers
-  const detected: PackageManager[] = [];
-
-  // Check for each lock file
-  for (const pm of packageManagers) {
-    const lockFile = LOCK_FILES[pm];
-    const lockFilePath = resolve(cwd, lockFile);
-
-    if (existsSync(lockFilePath)) {
-      detected.push(pm);
-      // Found a lock file, no need to check others
+  // Same lockfile order as the Starwind CLI: pnpm, yarn, bun, npm. A workspace member keeps its
+  // lockfile at the workspace root, so the nearest folder with a lockfile or a packageManager
+  // field wins, from cwd up to the filesystem root.
+  let packageManager: PackageManager = defaultManager;
+  for (let directory = resolve(cwd); ;) {
+    const detected = detectInDirectory(directory);
+    if (detected) {
+      packageManager = detected;
       break;
     }
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
   }
-
-  // Return the first detected package manager or default
-  const packageManager = detected.length > 0 ? detected[0] : defaultManager;
 
   return {
     name: packageManager,

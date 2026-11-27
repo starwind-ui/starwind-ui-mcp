@@ -7,10 +7,12 @@ import { detectPackageManager, type PackageManagerInfo } from "./package_manager
 // Mock the fs and path modules
 vi.mock("fs", () => ({
   existsSync: vi.fn(),
+  readFileSync: vi.fn(),
 }));
 
 vi.mock("path", () => ({
-  resolve: vi.fn((dir: string, file: string) => `${dir}/${file}`),
+  resolve: vi.fn((dir: string, file?: string) => (file ? `${dir}/${file}` : dir)),
+  dirname: vi.fn((dir: string) => dir.slice(0, dir.lastIndexOf("/")) || "/"),
 }));
 
 describe("detectPackageManager", () => {
@@ -96,6 +98,38 @@ describe("detectPackageManager", () => {
     expect(result.name).toBe("pnpm");
   });
 
+  it.each(["bun.lock", "bun.lockb"])("should detect bun when %s exists", (lockFile) => {
+    vi.mocked(fs.existsSync).mockImplementation(
+      (filePath) => filePath === `${mockCwd}/${lockFile}`,
+    );
+
+    const result = detectPackageManager();
+
+    expect(result).toEqual({
+      name: "bun",
+      installCmd: "bun install",
+      addCmd: "bun add",
+      removeCmd: "bun remove",
+      runCmd: "bun run",
+    });
+  });
+
+  it("should check bun lock files after yarn and before npm", () => {
+    vi.mocked(fs.existsSync).mockImplementation(
+      (filePath) =>
+        filePath === `${mockCwd}/yarn.lock` ||
+        filePath === `${mockCwd}/bun.lock` ||
+        filePath === `${mockCwd}/package-lock.json`,
+    );
+    expect(detectPackageManager().name).toBe("yarn");
+
+    vi.mocked(fs.existsSync).mockImplementation(
+      (filePath) =>
+        filePath === `${mockCwd}/bun.lockb` || filePath === `${mockCwd}/package-lock.json`,
+    );
+    expect(detectPackageManager().name).toBe("bun");
+  });
+
   it("should fall back to default manager when no lock files exist", () => {
     // Mock no lock files existing
     vi.mocked(fs.existsSync).mockReturnValue(false);
@@ -104,6 +138,8 @@ describe("detectPackageManager", () => {
 
     expect(fs.existsSync).toHaveBeenCalledWith(`${mockCwd}/pnpm-lock.yaml`);
     expect(fs.existsSync).toHaveBeenCalledWith(`${mockCwd}/yarn.lock`);
+    expect(fs.existsSync).toHaveBeenCalledWith(`${mockCwd}/bun.lock`);
+    expect(fs.existsSync).toHaveBeenCalledWith(`${mockCwd}/bun.lockb`);
     expect(fs.existsSync).toHaveBeenCalledWith(`${mockCwd}/package-lock.json`);
     expect(result.name).toBe("npm"); // Default is npm
   });
@@ -127,5 +163,32 @@ describe("detectPackageManager", () => {
     expect(fs.existsSync).toHaveBeenCalledWith(`${customCwd}/pnpm-lock.yaml`);
     expect(fs.existsSync).toHaveBeenCalledWith(`${customCwd}/yarn.lock`);
     expect(fs.existsSync).toHaveBeenCalledWith(`${customCwd}/package-lock.json`);
+  });
+
+  it("walks up to the workspace root lockfile", () => {
+    const member = `${mockCwd}/apps/web`;
+    vi.mocked(fs.existsSync).mockImplementation((filePath) => filePath === `${mockCwd}/bun.lock`);
+
+    expect(detectPackageManager({ cwd: member }).name).toBe("bun");
+  });
+
+  it("uses the nearest packageManager field when no closer lockfile exists", () => {
+    const member = `${mockCwd}/apps/web`;
+    vi.mocked(fs.existsSync).mockImplementation(
+      (filePath) =>
+        filePath === `${mockCwd}/package.json` || filePath === `/mock/package-lock.json`,
+    );
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ packageManager: "pnpm@11.8.0" }));
+
+    expect(detectPackageManager({ cwd: member }).name).toBe("pnpm");
+  });
+
+  it("prefers a member lockfile over the workspace root", () => {
+    const member = `${mockCwd}/apps/web`;
+    vi.mocked(fs.existsSync).mockImplementation(
+      (filePath) => filePath === `${member}/yarn.lock` || filePath === `${mockCwd}/pnpm-lock.yaml`,
+    );
+
+    expect(detectPackageManager({ cwd: member }).name).toBe("yarn");
   });
 });

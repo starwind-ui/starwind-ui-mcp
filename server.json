@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.starwind-ui/mcp",
   "title": "Starwind UI MCP Server",
-  "description": "Framework-aware Starwind UI v3 tools for Astro and React setup, components, docs, and migration.",
+  "description": "Starwind UI v3 tools for Astro, React, Vue, and Svelte setup, components, docs, and migration.",
   "version": "0.5.2",
   "websiteUrl": "https://starwind.dev/docs/getting-started/mcp/",
   "repository": {

@@ -1,5 +1,10 @@
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { liveShapeAiManifestFixture } from "../../test/ai_manifest_live_shape_fixture.js";
 import {
   aiManifestFixture,
   jsonResponse,
@@ -139,5 +144,341 @@ describe("starwindDocsTool", () => {
     await expect(
       starwindDocsTool.handler({ topic: "custom-over-limit", surface: "component" }),
     ).rejects.toThrow("Rate limit exceeded");
+  });
+
+  it("resolves Vue and Svelte guide topics", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockDocs({ "https://starwind.dev/docs/frameworks/vite-vue.md": "# Vite Vue" }),
+    );
+
+    const vue = await starwindDocsTool.handler({ topic: "vue" });
+
+    expect(vue).toMatchObject({ pageType: "guide", documentation: "# Vite Vue" });
+  });
+
+  it("resolves framework topics to guides with the published manifest shape", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          Promise.resolve(
+            url.includes("ai-manifest")
+              ? jsonResponse(liveShapeAiManifestFixture)
+              : textResponse(`# ${url}`),
+          ),
+        ),
+    );
+
+    const react = await starwindDocsTool.handler({ topic: "react" });
+    const vue = await starwindDocsTool.handler({ topic: "vue" });
+    const svelte = await starwindDocsTool.handler({ topic: "svelte" });
+    const button = await starwindDocsTool.handler({ topic: "button" });
+
+    expect(react).toMatchObject({ pageType: "guide", metadataSource: "network" });
+    expect(react.url).toBe("https://starwind.dev/docs/frameworks/vite-react.md");
+    expect(vue.url).toBe("https://starwind.dev/docs/frameworks/vite-vue.md");
+    expect(svelte.url).toBe("https://starwind.dev/docs/getting-started/svelte.md");
+    expect(button).toMatchObject({ pageType: "component" });
+  });
+
+  it("matches a component's own name before another component's alias", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          Promise.resolve(
+            url.includes("ai-manifest")
+              ? jsonResponse(liveShapeAiManifestFixture)
+              : textResponse(`# ${url}`),
+          ),
+        ),
+    );
+
+    // The published accordion aliases include "Item".
+    const item = await starwindDocsTool.handler({ topic: "item" });
+    const explicit = await starwindDocsTool.handler({ topic: "item", surface: "component" });
+
+    expect(item.url).toBe("https://starwind.dev/docs/components/item.md");
+    expect(explicit.url).toBe("https://starwind.dev/docs/components/item.md");
+  });
+
+  describe("installed package docs", () => {
+    let cwd: string;
+
+    function addPackage(name: string, version: string, pages: string[]) {
+      const dir = join(cwd, "node_modules", "@starwind-ui", name);
+      mkdirSync(join(dir, "docs"), { recursive: true });
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ version }));
+      writeFileSync(join(dir, "docs", "llms.txt"), `# ${name}`);
+      for (const page of pages) {
+        mkdirSync(join(dir, "docs", page, ".."), { recursive: true });
+        writeFileSync(join(dir, "docs", page), `# ${page}`);
+      }
+      return join(dir, "docs");
+    }
+
+    beforeEach(() => {
+      cwd = mkdtempSync(join(tmpdir(), "starwind-docs-installed-"));
+      vi.stubGlobal("fetch", mockDocs());
+    });
+    afterEach(() => rmSync(cwd, { recursive: true, force: true }));
+
+    it("points a Primitive topic to the project framework's installed page", async () => {
+      writeFileSync(
+        join(cwd, "package.json"),
+        JSON.stringify({ dependencies: { "@sveltejs/kit": "^2", svelte: "^5.29.0" } }),
+      );
+      addPackage("react", "1.6.0", ["primitives/button.md"]);
+      const svelteDocs = addPackage("svelte", "1.6.0", ["primitives/button.md"]);
+
+      const result = await starwindDocsTool.handler({
+        topic: "button",
+        surface: "primitive",
+        cwd,
+      });
+
+      expect(result.pageType).toBe("primitive");
+      expect(result.installedDocs).toMatchObject({
+        path: join(svelteDocs, "primitives", "button.md"),
+        packageName: "@starwind-ui/svelte",
+        packageVersion: "1.6.0",
+      });
+      expect(result.installedDocs?.note).toContain("@starwind-ui/svelte@1.6.0");
+    });
+
+    it("falls back to the Runtime controller page for a Primitive topic", async () => {
+      const runtimeDocs = addPackage("runtime", "1.6.0", ["controllers/combobox.md", "README.md"]);
+
+      const result = await starwindDocsTool.handler({
+        topic: "combobox",
+        surface: "primitive",
+        cwd,
+      });
+
+      expect(result.installedDocs?.path).toBe(join(runtimeDocs, "controllers", "combobox.md"));
+    });
+
+    it("points Runtime topics to the installed Runtime docs", async () => {
+      const runtimeDocs = addPackage("runtime", "1.6.0", ["controllers/button.md", "README.md"]);
+
+      const overview = await starwindDocsTool.handler({ topic: "runtime", cwd });
+      const controller = await starwindDocsTool.handler({
+        topic: "button",
+        surface: "runtime",
+        cwd,
+      });
+
+      expect(overview.installedDocs?.path).toBe(join(runtimeDocs, "README.md"));
+      expect(controller.pageType).toBe("runtime");
+      expect(controller.installedDocs?.path).toBe(join(runtimeDocs, "controllers", "button.md"));
+    });
+
+    it("omits installedDocs without cwd, for styled components, and before 1.6.0", async () => {
+      addPackage("astro", "1.6.0", ["primitives/button.md"]);
+      const legacy = join(cwd, "node_modules", "@starwind-ui", "react");
+      mkdirSync(legacy, { recursive: true });
+
+      const withoutCwd = await starwindDocsTool.handler({ topic: "button", surface: "primitive" });
+      // Image has no Primitive with the same name.
+      const styled = await starwindDocsTool.handler({ topic: "image", cwd });
+
+      expect(withoutCwd.installedDocs).toBeUndefined();
+      expect(styled.pageType).toBe("component");
+      expect(styled.installedDocs).toBeUndefined();
+
+      rmSync(join(cwd, "node_modules", "@starwind-ui", "astro"), { recursive: true, force: true });
+      const noDocs = await starwindDocsTool.handler({ topic: "button", surface: "primitive", cwd });
+      expect(noDocs.installedDocs).toBeUndefined();
+    });
+
+    it("adds the Primitive page to a styled component with the same name", async () => {
+      const astroDocs = addPackage("astro", "1.6.0", ["primitives/button.md"]);
+      writeFileSync(join(cwd, "package.json"), JSON.stringify({ dependencies: { astro: "^5" } }));
+
+      const result = await starwindDocsTool.handler({ topic: "button", cwd });
+
+      expect(result.pageType).toBe("component");
+      expect(result.url).toBe("https://starwind.dev/docs/components/button.md");
+      expect(result.installedDocs?.path).toBe(join(astroDocs, "primitives", "button.md"));
+      expect(result.installedDocs?.note).toContain("installed Primitive page for the same name");
+    });
+
+    it("finds docs hoisted to a workspace root", async () => {
+      const vueDocs = addPackage("vue", "1.6.0", ["primitives/combobox.md"]);
+      const app = join(cwd, "apps", "web");
+      mkdirSync(app, { recursive: true });
+      writeFileSync(
+        join(app, "package.json"),
+        JSON.stringify({ dependencies: { nuxt: "^4", vue: "^3.5.21" } }),
+      );
+
+      const primitive = await starwindDocsTool.handler({
+        topic: "combobox",
+        surface: "primitive",
+        cwd: app,
+      });
+
+      expect(primitive.installedDocs?.path).toBe(join(vueDocs, "primitives", "combobox.md"));
+    });
+
+    it.each([
+      ["init-starwind", "runtime", "init-starwind.md"],
+      ["initStarwind", "auto", "init-starwind.md"],
+      ["raw-html", "auto", "raw-html.md"],
+      ["theme", "runtime", "theme.md"],
+    ] as const)("maps the Runtime topic %s to its shipped page", async (topic, surface, file) => {
+      const runtimeDocs = addPackage("runtime", "1.6.0", [
+        "README.md",
+        "init-starwind.md",
+        "raw-html.md",
+        "theme.md",
+      ]);
+
+      const result = await starwindDocsTool.handler({ topic, surface, cwd });
+
+      expect(result.pageType).toBe("runtime");
+      expect(result.installedDocs?.path).toBe(join(runtimeDocs, file));
+    });
+
+    it("returns the installed page when both website requests fail", async () => {
+      const vueDocs = addPackage("vue", "1.6.0", ["primitives/button.md"]);
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockImplementation((url: string) =>
+            Promise.resolve(
+              url.includes("ai-manifest") ? jsonResponse(aiManifestFixture) : textResponse("", 503),
+            ),
+          ),
+      );
+
+      const result = await starwindDocsTool.handler({ topic: "button", surface: "primitive", cwd });
+
+      expect(result).toMatchObject({
+        resultType: "installed",
+        url: join(vueDocs, "primitives", "button.md"),
+        documentation: "# primitives/button.md",
+      });
+
+      await expect(
+        starwindDocsTool.handler({ topic: "image", surface: "component", cwd }),
+      ).rejects.toThrow("Unable to fetch Starwind documentation");
+    });
+
+    it("follows a pnpm package symlink to the real package folder", async () => {
+      const store = join(cwd, "node_modules", ".pnpm", "vue@1.6.0", "node_modules", "@starwind-ui");
+      const realDir = join(store, "vue");
+      mkdirSync(join(realDir, "docs", "primitives"), { recursive: true });
+      writeFileSync(join(realDir, "package.json"), JSON.stringify({ version: "1.6.0" }));
+      writeFileSync(join(realDir, "docs", "llms.txt"), "# vue");
+      writeFileSync(join(realDir, "docs", "primitives", "button.md"), "# Button");
+      mkdirSync(join(cwd, "node_modules", "@starwind-ui"), { recursive: true });
+      symlinkSync(realDir, join(cwd, "node_modules", "@starwind-ui", "vue"), "dir");
+
+      const result = await starwindDocsTool.handler({ topic: "button", surface: "primitive", cwd });
+
+      expect(result.installedDocs?.path).toBe(
+        join(cwd, "node_modules", "@starwind-ui", "vue", "docs", "primitives", "button.md"),
+      );
+    });
+
+    it("refuses a docs page that links outside the package docs folder", async () => {
+      const docs = addPackage("vue", "1.6.0", []);
+      const secret = join(cwd, "secret.md");
+      writeFileSync(secret, "secret");
+      mkdirSync(join(docs, "primitives"), { recursive: true });
+      symlinkSync(secret, join(docs, "primitives", "button.md"));
+      mkdirSync(join(docs, "primitives", "combobox.md"));
+
+      const linked = await starwindDocsTool.handler({ topic: "button", surface: "primitive", cwd });
+      const folder = await starwindDocsTool.handler({
+        topic: "combobox",
+        surface: "primitive",
+        cwd,
+      });
+
+      expect(linked.installedDocs).toBeUndefined();
+      expect(folder.installedDocs).toBeUndefined();
+    });
+
+    it("serves the installed page when the website request limit is used up", async () => {
+      const vueDocs = addPackage("vue", "1.6.0", ["primitives/button.md"]);
+      for (let index = 0; index < 10; index += 1) {
+        await starwindDocsTool.handler({ topic: `custom-${index}`, surface: "component" });
+      }
+
+      const result = await starwindDocsTool.handler({ topic: "button", surface: "primitive", cwd });
+
+      expect(result).toMatchObject({
+        resultType: "installed",
+        url: join(vueDocs, "primitives", "button.md"),
+      });
+      expect(result.note).toContain("request limit");
+      await expect(
+        starwindDocsTool.handler({ topic: "image", surface: "component", cwd }),
+      ).rejects.toThrow("Rate limit exceeded");
+    });
+  });
+
+  it("does not resolve inherited object keys as topics", async () => {
+    vi.stubGlobal("fetch", mockDocs());
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-docs-constructor-"));
+    try {
+      const docsDir = join(cwd, "node_modules", "@starwind-ui", "runtime", "docs");
+      mkdirSync(docsDir, { recursive: true });
+      writeFileSync(join(docsDir, "..", "package.json"), JSON.stringify({ version: "1.6.0" }));
+      writeFileSync(join(docsDir, "llms.txt"), "# runtime");
+      writeFileSync(join(docsDir, "README.md"), "# Runtime");
+
+      const constructorTopic = await starwindDocsTool.handler({ topic: "constructor" });
+      const runtimeConstructor = await starwindDocsTool.handler({
+        topic: "constructor",
+        surface: "runtime",
+        cwd,
+      });
+
+      expect(constructorTopic.resultType).toBe("filtered");
+      expect(runtimeConstructor.pageType).toBe("runtime");
+      expect(runtimeConstructor.installedDocs?.path).toBe(join(docsDir, "README.md"));
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("ranks exact names on either surface above aliases", async () => {
+    const manifest = structuredClone(aiManifestFixture);
+    manifest.components[0].aliases.push("drawer");
+    manifest.layeredDocs.primitives.push({
+      ...manifest.layeredDocs.primitives[1],
+      id: "drawer",
+      title: "Drawer Primitive",
+      label: "Drawer",
+      docsUrl: "https://starwind.dev/docs/primitives/drawer/",
+      markdownUrl: "https://starwind.dev/docs/primitives/drawer.md",
+      aliases: ["drawer"],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          Promise.resolve(
+            url.includes("ai-manifest") ? jsonResponse(manifest) : textResponse(`# ${url}`),
+          ),
+        ),
+    );
+
+    const drawer = await starwindDocsTool.handler({ topic: "drawer" });
+    const button = await starwindDocsTool.handler({ topic: "button" });
+
+    expect(drawer.url).toBe("https://starwind.dev/docs/primitives/drawer.md");
+    expect(button).toMatchObject({
+      pageType: "component",
+      url: "https://starwind.dev/docs/components/button.md",
+    });
   });
 });

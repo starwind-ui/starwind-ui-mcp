@@ -5,6 +5,8 @@
 
 import { z } from "zod";
 
+import { STARWIND_PRO_ASTRO_COMPONENTS_WARNING } from "../utils/starwind_pro_guidance.js";
+
 /**
  * Manifest block structure from pro.starwind.dev
  */
@@ -239,6 +241,7 @@ export const searchProBlocksTool = {
             "Starwind Pro blocks REQUIRE the project to be initialized with --pro flag before blocks can be added.",
           initCommand: "pnpm dlx starwind@latest init --defaults --pro",
           note: "If the project was initialized without --pro, Pro blocks will fail to install.",
+          frameworkNote: STARWIND_PRO_ASTRO_COMPONENTS_WARNING,
         },
       };
     }
@@ -323,6 +326,7 @@ export const searchProBlocksTool = {
       note: "If the project was initialized without --pro, Pro blocks will fail to install. Re-run init with --pro to fix.",
       starwindAddTip:
         "When using starwind_add tool with Pro blocks, set init=true and pro=true to generate the correct init command.",
+      frameworkNote: STARWIND_PRO_ASTRO_COMPONENTS_WARNING,
     };
 
     return response;

@@ -1,19 +1,62 @@
 import { existsSync, readFileSync } from "fs";
-import { resolve } from "path";
+import { dirname, resolve } from "path";
+
+import { isStarwindFramework, type StarwindFramework } from "./starwind_manifest.js";
+
+/** Host kinds match the Starwind framework installation guide slugs. */
+export type StarwindHost =
+  | "astro"
+  | "nextjs"
+  | "react-router"
+  | "tanstack-start"
+  | "vite-react"
+  | "laravel-inertia-vue"
+  | "nuxt"
+  | "quasar"
+  | "vite-vue"
+  | "sveltekit"
+  | "vite-svelte";
+
+export type StarwindIslandFramework = Exclude<StarwindFramework, "astro">;
+
+export interface StarwindPackageDocs {
+  packageName: string;
+  packageVersion: string | null;
+  docsDir: string;
+  llmsTxt: string;
+  readme: string | null;
+}
 
 export interface StarwindProjectContext {
   cwd: string;
   nodeVersion: string;
   packageJsonFound: boolean;
-  detectedFramework: "astro" | "react" | null;
+  detectedFramework: StarwindFramework | null;
+  detectedHost: StarwindHost | null;
+  astroIslandFrameworks: StarwindIslandFramework[];
   starwindConfigFound: boolean;
   configVersion: number | null;
   configVersionInvalid: boolean;
-  configuredFramework: "astro" | "react" | null;
+  configuredFramework: StarwindFramework | null;
   componentDir: string | null;
+  componentDirs: Partial<Record<StarwindFramework, string>> | null;
   installedComponentCount: number | null;
   proRegistryConfigured: boolean;
+  packageDocs: StarwindPackageDocs[];
 }
+
+export interface InspectStarwindProjectOptions {
+  /** Read node_modules for installed package docs. Tools enable this only for an explicit cwd. */
+  packageDocs?: boolean;
+}
+
+export const STARWIND_DOCS_PACKAGES = [
+  "@starwind-ui/runtime",
+  "@starwind-ui/astro",
+  "@starwind-ui/react",
+  "@starwind-ui/vue",
+  "@starwind-ui/svelte",
+] as const;
 
 const ASTRO_CONFIG_FILES = [
   "astro.config.mjs",
@@ -22,6 +65,29 @@ const ASTRO_CONFIG_FILES = [
   "astro.config.mts",
   "astro.config.cjs",
   "astro.config.cts",
+] as const;
+
+const QUASAR_CONFIG_FILES = [
+  "quasar.config.ts",
+  "quasar.config.js",
+  "quasar.config.mjs",
+  "quasar.config.cjs",
+] as const;
+
+const VITE_CONFIG_FILES = [
+  "vite.config.ts",
+  "vite.config.js",
+  "vite.config.mts",
+  "vite.config.mjs",
+] as const;
+
+const MAIN_ENTRY_FILES = ["src/main.ts", "src/main.js"] as const;
+
+const REACT_ROUTER_CONFIG_FILES = [
+  "react-router.config.ts",
+  "react-router.config.js",
+  "react-router.config.mjs",
+  "react-router.config.mts",
 ] as const;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -52,24 +118,242 @@ function readJson(path: string): Record<string, unknown> | null {
   }
 }
 
-export function inspectStarwindProject(cwd = process.cwd()): StarwindProjectContext {
+function getDependencies(packageJson: Record<string, unknown> | null): Record<string, unknown> {
+  // Same precedence as the Starwind CLI host planner.
+  return {
+    ...(asRecord(packageJson?.peerDependencies) ?? {}),
+    ...(asRecord(packageJson?.optionalDependencies) ?? {}),
+    ...(asRecord(packageJson?.devDependencies) ?? {}),
+    ...(asRecord(packageJson?.dependencies) ?? {}),
+  };
+}
+
+function anyFile(cwd: string, files: readonly string[]): boolean {
+  return files.some((file) => existsSync(resolve(cwd, file)));
+}
+
+function readFirstFile(cwd: string, files: readonly string[]): string | null {
+  for (const file of files) {
+    const path = resolve(cwd, file);
+    if (!existsSync(path)) continue;
+    try {
+      return readFileSync(path, "utf8");
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** True when the config imports the named plugin from its module and calls it under plugins. */
+function configCallsPlugin(content: string, moduleName: string, exportName: string): boolean {
+  const importPattern = new RegExp(
+    `import\\s*\\{([^}]*)\\}\\s*from\\s*["']${escapeRegExp(moduleName)}["']`,
+  );
+  const specifiers = content.match(importPattern)?.[1];
+  if (!specifiers) return false;
+  const binding = specifiers
+    .split(",")
+    .map((specifier) => specifier.trim().split(/\s+as\s+/))
+    .find(([imported]) => imported === exportName);
+  if (!binding) return false;
+  const local = binding[1] ?? binding[0];
+  const plugins = readPluginsArray(content);
+  return plugins !== null && new RegExp(`\\b${escapeRegExp(local)}\\s*\\(`).test(plugins);
+}
+
+/** Returns the text of the plugins array, matching nested brackets by depth. */
+function readPluginsArray(content: string): string | null {
+  const start = content.match(/plugins\s*:\s*\[/);
+  if (!start || start.index === undefined) return null;
+  const open = start.index + start[0].length;
+  let depth = 1;
+  for (let index = open; index < content.length; index += 1) {
+    const char = content[index];
+    if (char === "[") depth += 1;
+    else if (char === "]") depth -= 1;
+    if (depth === 0) return content.slice(open, index);
+  }
+  return null;
+}
+
+/**
+ * A small subset check against >=5.29.0 <6 for the range forms projects declare. Anything else
+ * (catalog:, workspace:, unions, open upper bounds) is not supported, as in the CLI.
+ */
+export function isSupportedSvelteRange(range: string): boolean {
+  const value = range.trim();
+  const supported = (major: string, minor: string) => Number(major) === 5 && Number(minor) >= 29;
+  const caretOrTilde = value.match(/^[\^~]\s*v?(\d+)\.(\d+)(?:\.\d+)?(?:-[\w.]+)?$/);
+  if (caretOrTilde) return supported(caretOrTilde[1], caretOrTilde[2]);
+  const exact = value.match(/^=?\s*v?(\d+)\.(\d+)\.\d+$/);
+  if (exact) return supported(exact[1], exact[2]);
+  const bounded = value.match(/^>=\s*v?(\d+)\.(\d+)(?:\.\d+)?\s+<\s*v?6(?:\.0){0,2}$/);
+  return bounded ? supported(bounded[1], bounded[2]) : false;
+}
+
+interface HostDetection {
+  framework: StarwindFramework | null;
+  host: StarwindHost | null;
+  islands: StarwindIslandFramework[];
+}
+
+/**
+ * Mirrors the Starwind CLI host order with cheap package and file signals: Astro first, then a
+ * Svelte host, then a Vue host, then a React host. Like the CLI, a Vite Svelte, SvelteKit, or
+ * Vite Vue host replaces a React host only when its host check passes. A Next.js app that
+ * declares Svelte for a widget stays React.
+ */
+function detectHost(
+  cwd: string,
+  deps: Record<string, unknown>,
+  svelteRanges: string[],
+): HostDetection {
+  const has = (name: string) => Boolean(deps[name]);
+  const file = (path: string) => existsSync(resolve(cwd, path));
+  const hasViteConfig = anyFile(cwd, VITE_CONFIG_FILES);
+  const hasMainEntry = anyFile(cwd, MAIN_ENTRY_FILES);
+
+  if (has("astro") || anyFile(cwd, ASTRO_CONFIG_FILES)) {
+    const islands: StarwindIslandFramework[] = [];
+    if (has("@astrojs/react") || has("react") || has("react-dom")) islands.push("react");
+    if (has("@astrojs/vue") || has("vue")) islands.push("vue");
+    if (has("@astrojs/svelte") || has("svelte")) islands.push("svelte");
+    return { framework: "astro", host: "astro", islands };
+  }
+
+  // Same signals as the CLI Svelte host check.
+  const svelteHost: StarwindHost | null = has("@sveltejs/kit")
+    ? "sveltekit"
+    : has("svelte") || has("@sveltejs/vite-plugin-svelte") || has("@astrojs/svelte")
+      ? "vite-svelte"
+      : null;
+  // The CLI also requires a declared Svelte range inside >=5.29.0 <6 and a Vite config that
+  // calls the official plugin in its plugins array.
+  const svelteRangeSupported =
+    svelteRanges.length > 0 && svelteRanges.every(isSupportedSvelteRange);
+  const viteConfig = readFirstFile(cwd, VITE_CONFIG_FILES);
+  const svelteReady =
+    svelteRangeSupported &&
+    has("vite") &&
+    viteConfig !== null &&
+    (svelteHost === "sveltekit"
+      ? configCallsPlugin(viteConfig, "@sveltejs/kit/vite", "sveltekit") &&
+        file("src/routes") &&
+        file("src/app.html")
+      : svelteHost === "vite-svelte" &&
+        has("@sveltejs/vite-plugin-svelte") &&
+        configCallsPlugin(viteConfig, "@sveltejs/vite-plugin-svelte", "svelte") &&
+        hasMainEntry &&
+        file("src/App.svelte"));
+  if (svelteHost && svelteReady) return { framework: "svelte", host: svelteHost, islands: [] };
+
+  const vueHost: StarwindHost | null =
+    has("vue") && has("@inertiajs/vue3")
+      ? "laravel-inertia-vue"
+      : has("nuxt")
+        ? "nuxt"
+        : has("@quasar/app-vite") || anyFile(cwd, QUASAR_CONFIG_FILES)
+          ? "quasar"
+          : has("vue")
+            ? "vite-vue"
+            : null;
+  const vueReady =
+    vueHost === "vite-vue"
+      ? has("@vitejs/plugin-vue") && hasViteConfig && hasMainEntry && file("src/App.vue")
+      : vueHost !== null;
+  if (vueHost && vueReady) return { framework: "vue", host: vueHost, islands: [] };
+
+  if (has("react") || has("react-dom")) {
+    const host: StarwindHost = has("next")
+      ? "nextjs"
+      : has("@tanstack/react-start")
+        ? "tanstack-start"
+        : has("@react-router/dev") || anyFile(cwd, REACT_ROUTER_CONFIG_FILES)
+          ? "react-router"
+          : "vite-react";
+    return { framework: "react", host, islands: [] };
+  }
+
+  // Without a React host, an incomplete Svelte or Vue host still names its framework, as the CLI
+  // reports that host with a setup diagnostic.
+  if (svelteHost) return { framework: "svelte", host: svelteHost, islands: [] };
+  if (vueHost) return { framework: "vue", host: vueHost, islands: [] };
+  return { framework: null, host: null, islands: [] };
+}
+
+function readComponentDirs(
+  config: Record<string, unknown> | null,
+): Partial<Record<StarwindFramework, string>> | null {
+  const dirs = asRecord(config?.componentDirs);
+  if (!dirs) return null;
+  const entries = Object.entries(dirs).filter(
+    (entry): entry is [StarwindFramework, string] =>
+      isStarwindFramework(entry[0]) && typeof entry[1] === "string" && entry[1].length > 0,
+  );
+  return entries.length ? Object.fromEntries(entries) : null;
+}
+
+/**
+ * Finds an installed package the way Node resolves it: the nearest node_modules folder from cwd
+ * up to the filesystem root. This covers packages hoisted to an npm, Yarn, or Bun workspace root.
+ */
+function findInstalledPackageDir(cwd: string, packageName: string): string | null {
+  let dir = resolve(cwd);
+  for (;;) {
+    const candidate = resolve(dir, "node_modules", packageName);
+    if (existsSync(resolve(candidate, "package.json"))) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/** Lists installed Starwind packages that ship version-matched docs (1.6.0 and newer). */
+export function findStarwindPackageDocs(cwd: string): StarwindPackageDocs[] {
+  return STARWIND_DOCS_PACKAGES.flatMap((packageName) => {
+    const packageDir = findInstalledPackageDir(cwd, packageName);
+    if (!packageDir) return [];
+    const docsDir = resolve(packageDir, "docs");
+    const llmsTxt = resolve(docsDir, "llms.txt");
+    if (!existsSync(llmsTxt)) return [];
+    const readme = resolve(docsDir, "README.md");
+    const version = readJson(resolve(packageDir, "package.json"))?.version;
+    return [
+      {
+        packageName,
+        packageVersion: typeof version === "string" ? version : null,
+        docsDir,
+        llmsTxt,
+        readme: existsSync(readme) ? readme : null,
+      },
+    ];
+  });
+}
+
+export function inspectStarwindProject(
+  cwd = process.cwd(),
+  options: InspectStarwindProjectOptions = {},
+): StarwindProjectContext {
   const packagePath = resolve(cwd, "package.json");
   const configPath = resolve(cwd, "starwind.config.json");
   const packageJson = existsSync(packagePath) ? readJson(packagePath) : null;
   const config = existsSync(configPath) ? readJson(configPath) : null;
-  const dependencies = {
-    ...((packageJson?.dependencies as Record<string, unknown> | undefined) ?? {}),
-    ...((packageJson?.devDependencies as Record<string, unknown> | undefined) ?? {}),
-  };
-  const hasAstroConfig = ASTRO_CONFIG_FILES.some((file) => existsSync(resolve(cwd, file)));
-  const detectedFramework =
-    dependencies.astro || hasAstroConfig
-      ? "astro"
-      : dependencies.react || dependencies["react-dom"]
-        ? "react"
-        : null;
-  const configuredFramework =
-    config?.framework === "astro" || config?.framework === "react" ? config.framework : null;
+  const svelteRanges = [
+    packageJson?.dependencies,
+    packageJson?.devDependencies,
+    packageJson?.optionalDependencies,
+    packageJson?.peerDependencies,
+  ].flatMap((field) => {
+    const range = asRecord(field)?.svelte;
+    return typeof range === "string" ? [range] : [];
+  });
+  const detection = detectHost(cwd, getDependencies(packageJson), svelteRanges);
+  const configuredFramework = isStarwindFramework(config?.framework) ? config.framework : null;
   const components = config?.components;
   const hasConfigVersion = config !== null && "version" in config;
   const configVersionInvalid = hasConfigVersion && typeof config.version !== "number";
@@ -80,13 +364,85 @@ export function inspectStarwindProject(cwd = process.cwd()): StarwindProjectCont
     cwd,
     nodeVersion: process.versions.node,
     packageJsonFound: packageJson !== null,
-    detectedFramework,
+    detectedFramework: detection.framework,
+    detectedHost: detection.host,
+    astroIslandFrameworks: detection.islands,
     starwindConfigFound: config !== null,
     configVersion,
     configVersionInvalid,
     configuredFramework,
     componentDir: typeof config?.componentDir === "string" ? config.componentDir : null,
+    componentDirs: readComponentDirs(config),
     installedComponentCount: Array.isArray(components) ? components.length : null,
     proRegistryConfigured: hasProRegistryConfiguration(config),
+    packageDocs: options.packageDocs ? findStarwindPackageDocs(cwd) : [],
   };
+}
+
+function stripPrefix(value: string, prefix: string): string | null {
+  return value.startsWith(prefix) ? value.slice(prefix.length) : null;
+}
+
+function majorFrom(value: unknown): number | null {
+  const match = typeof value === "string" ? value.match(/(\d+)/) : null;
+  return match ? Number(match[1]) : null;
+}
+
+/** Installed package version first (walking up for workspaces), then the declared range. */
+function getPackageMajor(cwd: string, packageName: string): number | null {
+  const packageDir = findInstalledPackageDir(cwd, packageName);
+  const installed = packageDir
+    ? majorFrom(readJson(resolve(packageDir, "package.json"))?.version)
+    : null;
+  return (
+    installed ?? majorFrom(getDependencies(readJson(resolve(cwd, "package.json")))[packageName])
+  );
+}
+
+/** Nuxt 4 keeps app files under app/; a Nuxt 3 root layout keeps app.vue at the project root. */
+function getNuxtSourceRoot(cwd: string): string {
+  if (existsSync(resolve(cwd, "app", "app.vue"))) return "app/";
+  if (existsSync(resolve(cwd, "app.vue"))) return "";
+  return getPackageMajor(cwd, "nuxt") === 4 ? "app/" : "";
+}
+
+/**
+ * Returns the import path for a styled component in this project, or null when the project does
+ * not show its host or component directory. Paths follow the Starwind framework install guides.
+ */
+export function getProjectStyledImportPath(
+  project: StarwindProjectContext,
+  framework: StarwindFramework | null | undefined,
+  name: string,
+): string | null {
+  const target = framework ?? project.configuredFramework ?? project.detectedFramework;
+  const configured = (target && project.componentDirs?.[target]) || null;
+  const dir = (configured ?? project.componentDir)?.replace(/^\.\//, "").replace(/\/$/, "");
+
+  if (project.detectedHost === "nuxt" && target === "vue") {
+    const sourceRoot = getNuxtSourceRoot(project.cwd);
+    const base = dir ? (stripPrefix(dir, sourceRoot) ?? dir) : "components/starwind";
+    return `~/${base}/${name}`;
+  }
+  if (project.detectedHost === "sveltekit" && target === "svelte") {
+    const rest = stripPrefix(dir ?? "src/lib/starwind", "src/lib/");
+    if (rest === null) return null;
+    return getPackageMajor(project.cwd, "@sveltejs/kit") === 3
+      ? `#lib/${rest}/${name}/index.js`
+      : `$lib/${rest}/${name}`;
+  }
+  if (project.detectedHost === "quasar" && target === "vue") {
+    return `${dir ?? "src/components/starwind"}/${name}`;
+  }
+  if (project.detectedHost === "laravel-inertia-vue" && target === "vue") {
+    const rest = stripPrefix(dir ?? "resources/js/components/starwind", "resources/js/");
+    return rest === null ? null : `@/${rest}/${name}`;
+  }
+  if (project.detectedHost === "astro" && target && target !== "astro" && !configured) {
+    return project.astroIslandFrameworks.includes(target)
+      ? `@/components/starwind-${target}/${name}`
+      : null;
+  }
+  const rest = dir ? stripPrefix(dir, "src/") : null;
+  return rest === null ? null : `@/${rest}/${name}`;
 }
