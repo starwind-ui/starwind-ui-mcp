@@ -247,4 +247,95 @@ describe("inspectStarwindProject", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
+
+  it("finds package docs hoisted to a parent workspace node_modules", () => {
+    const root = mkdtempSync(join(tmpdir(), "starwind-project-hoisted-"));
+    try {
+      const svelteDir = join(root, "node_modules", "@starwind-ui", "svelte");
+      mkdirSync(join(svelteDir, "docs"), { recursive: true });
+      writeFileSync(join(svelteDir, "package.json"), JSON.stringify({ version: "1.6.0" }));
+      writeFileSync(join(svelteDir, "docs", "llms.txt"), "# Svelte docs");
+      const app = join(root, "apps", "web");
+      mkdirSync(app, { recursive: true });
+
+      expect(inspectStarwindProject(app, { packageDocs: true }).packageDocs).toEqual([
+        {
+          packageName: "@starwind-ui/svelte",
+          packageVersion: "1.6.0",
+          docsDir: join(svelteDir, "docs"),
+          llmsTxt: join(svelteDir, "docs", "llms.txt"),
+          readme: null,
+        },
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers the nearest node_modules over a hoisted copy", () => {
+    const root = mkdtempSync(join(tmpdir(), "starwind-project-nearest-"));
+    try {
+      const app = join(root, "apps", "web");
+      for (const [base, version] of [
+        [root, "1.6.0"],
+        [app, "1.6.1"],
+      ] as const) {
+        const dir = join(base, "node_modules", "@starwind-ui", "runtime");
+        mkdirSync(join(dir, "docs"), { recursive: true });
+        writeFileSync(join(dir, "package.json"), JSON.stringify({ version }));
+        writeFileSync(join(dir, "docs", "llms.txt"), "# Runtime docs");
+      }
+      expect(inspectStarwindProject(app, { packageDocs: true }).packageDocs[0].packageVersion).toBe(
+        "1.6.1",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a Next.js app that declares Svelte for a widget as React", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-project-next-svelte-"));
+    try {
+      writeFileSync(
+        join(cwd, "package.json"),
+        JSON.stringify({
+          dependencies: { next: "^16", react: "^19", "react-dom": "^19" },
+          devDependencies: {
+            svelte: "^5.29.0",
+            "@sveltejs/vite-plugin-svelte": "^6",
+            vite: "^7",
+          },
+        }),
+      );
+      writeFileSync(join(cwd, "vite.config.ts"), "");
+      const context = inspectStarwindProject(cwd);
+      expect(context.detectedFramework).toBe("react");
+      expect(context.detectedHost).toBe("nextjs");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("detects a complete Vite Svelte host even when React is declared", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-project-vite-svelte-"));
+    try {
+      writeFileSync(
+        join(cwd, "package.json"),
+        JSON.stringify({
+          dependencies: { react: "^19", svelte: "^5.29.0" },
+          devDependencies: { "@sveltejs/vite-plugin-svelte": "^6", vite: "^7" },
+        }),
+      );
+      mkdirSync(join(cwd, "src"));
+      for (const file of ["vite.config.ts", "src/main.ts", "src/App.svelte"]) {
+        writeFileSync(join(cwd, file), "");
+      }
+      expect(inspectStarwindProject(cwd)).toMatchObject({
+        detectedFramework: "svelte",
+        detectedHost: "vite-svelte",
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 });
