@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -73,7 +73,12 @@ describe("starwindSearchTool", () => {
         },
       ]);
       expect(result.proBlocks.source).toBe("network");
-      expect(result.proFrameworkWarning).toContain("Astro components");
+      // No Pro block matches "button", so no Pro warning.
+      expect(result.proBlocks.results).toEqual([]);
+      expect(result.proFrameworkWarning).toBeUndefined();
+
+      const hero = await starwindSearchTool.handler({ query: "hero", framework });
+      expect(hero.proFrameworkWarning).toContain("Astro components");
 
       const image = await starwindSearchTool.handler({ query: "image", framework });
       expect(image.styledComponents.results).toEqual([]);
@@ -197,5 +202,140 @@ describe("starwindSearchTool", () => {
     const result = await starwindSearchTool.handler({ category: "pricing", plan: "pro", limit: 1 });
     expect(result.proBlocks.totalMatches).toBe(1);
     expect(result.proBlocks.pagination).toEqual({ limit: 1, offset: 0, hasMore: false });
+  });
+
+  it("uses the project package manager runner in every generated command", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-search-bun-"));
+    try {
+      writeFileSync(join(cwd, "bun.lock"), "");
+      const result = await starwindSearchTool.handler({ query: "button", cwd });
+      expect(result.styledComponents.results[0].addCommand).toBe(
+        "bunx starwind@latest add button --yes",
+      );
+      expect(result.primitives.results[0].addCommand).toBe(
+        "bunx starwind@latest primitives add button --yes",
+      );
+      expect(result.proDiscovery.setupCommand).toBe("bunx starwind@latest setup --yes");
+
+      const hero = await starwindSearchTool.handler({ query: "hero", cwd });
+      expect(hero.proBlocks.results[0].installCommand).toBe(
+        "bunx starwind@latest add @starwind-pro/hero-01 button --yes",
+      );
+      const pricing = await starwindSearchTool.handler({ query: "pricing", cwd });
+      expect(pricing.proBlocks.results[0].deferredInstallCommand).toBe(
+        "bunx starwind@latest add @starwind-pro/pricing-02 badge button card switch --yes",
+      );
+      expect(pricing.proUpgrade).toMatchObject({
+        setupCommand: "bunx starwind@latest setup --yes",
+        newProjectCommand: "bunx starwind@latest init --defaults --pro",
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the selected framework for the Pro new-project command", async () => {
+    const result = await starwindSearchTool.handler({ query: "pricing", framework: "vue" });
+    expect(result.proUpgrade.newProjectCommand).toBe(
+      "npx starwind@latest init --defaults --framework vue --pro",
+    );
+  });
+
+  describe("project import paths", () => {
+    function withProject(
+      files: Record<string, string>,
+      run: (cwd: string) => Promise<void>,
+    ): Promise<void> {
+      const cwd = mkdtempSync(join(tmpdir(), "starwind-search-import-"));
+      for (const [path, content] of Object.entries(files)) {
+        mkdirSync(dirname(join(cwd, path)), { recursive: true });
+        writeFileSync(join(cwd, path), content);
+      }
+      return run(cwd).finally(() => rmSync(cwd, { recursive: true, force: true }));
+    }
+
+    it.each([
+      [
+        "Nuxt",
+        { "package.json": JSON.stringify({ dependencies: { nuxt: "^4", vue: "^3.5.21" } }) },
+        "~/components/starwind/button",
+      ],
+      [
+        "Nuxt with componentDir",
+        {
+          "package.json": JSON.stringify({ dependencies: { nuxt: "^4", vue: "^3.5.21" } }),
+          "starwind.config.json": JSON.stringify({
+            version: 2,
+            framework: "vue",
+            componentDir: "app/components/starwind",
+          }),
+        },
+        "~/components/starwind/button",
+      ],
+      [
+        "SvelteKit 2",
+        {
+          "package.json": JSON.stringify({
+            devDependencies: { "@sveltejs/kit": "^2.20.0", svelte: "^5.29.0" },
+          }),
+        },
+        "$lib/starwind/button",
+      ],
+      [
+        "SvelteKit 3",
+        {
+          "package.json": JSON.stringify({
+            devDependencies: { "@sveltejs/kit": "^3.0.0", svelte: "^5.29.0" },
+          }),
+        },
+        "#lib/starwind/button/index.js",
+      ],
+      [
+        "Quasar",
+        {
+          "package.json": JSON.stringify({
+            dependencies: { vue: "^3.5.21" },
+            devDependencies: { "@quasar/app-vite": "^2" },
+          }),
+        },
+        "src/components/starwind/button",
+      ],
+      [
+        "Astro with componentDirs.vue",
+        {
+          "package.json": JSON.stringify({ dependencies: { astro: "^5", vue: "^3.5.21" } }),
+          "starwind.config.json": JSON.stringify({
+            version: 2,
+            framework: "astro",
+            componentDir: "src/components/starwind",
+            componentDirs: { vue: "src/components/starwind-vue" },
+          }),
+        },
+        "@/components/starwind-vue/button",
+      ],
+    ])("adds projectImportPath for %s", async (_label, files, expected) => {
+      await withProject(files, async (cwd) => {
+        const framework = _label.startsWith("Astro") ? "vue" : undefined;
+        const result = await starwindSearchTool.handler({
+          query: "button",
+          surface: "styled",
+          cwd,
+          framework,
+        });
+        expect(result.styledComponents.results[0]).toMatchObject({
+          publicImportPath: "@/components/starwind/button",
+          projectImportPath: expected,
+        });
+      });
+    });
+
+    it("omits projectImportPath without cwd or project evidence", async () => {
+      const result = await starwindSearchTool.handler({ query: "button", surface: "styled" });
+      expect(result.styledComponents.results[0].projectImportPath).toBeUndefined();
+      await withProject({ "package.json": "{}" }, async (cwd) => {
+        const empty = await starwindSearchTool.handler({ query: "button", surface: "styled", cwd });
+        expect(empty.styledComponents.results[0].projectImportPath).toBeUndefined();
+      });
+    });
   });
 });

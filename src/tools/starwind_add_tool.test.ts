@@ -465,4 +465,36 @@ describe("starwindAddTool", () => {
       error: "Invalid Pro manifest install command",
     });
   });
+
+  it("passes --framework vue to init for a detected Vue host", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-add-nuxt-"));
+    try {
+      writeFileSync(
+        join(cwd, "package.json"),
+        JSON.stringify({ dependencies: { nuxt: "^4", vue: "3.5.20" } }),
+      );
+      const result = await starwindAddTool.handler({
+        components: ["button"],
+        init: true,
+        cwd,
+        packageManager: "pnpm",
+      });
+      expect(result.command).toBe(
+        "pnpm dlx starwind@latest init --defaults --framework vue && pnpm dlx starwind@latest add button --yes --framework vue --package-manager pnpm",
+      );
+
+      const paid = await starwindAddTool.handler({
+        components: ["@starwind-pro/pricing-02"],
+        init: true,
+        cwd,
+        packageManager: "pnpm",
+      });
+      expect(paid.command).toBe("pnpm dlx starwind@latest init --defaults --framework vue --pro");
+      expect(paid.proUpgrade).toMatchObject({
+        newProjectCommand: "pnpm dlx starwind@latest init --defaults --framework vue --pro",
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 });

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { detectPackageManager, type PackageManager } from "../utils/package_manager.js";
 import { inspectStarwindProject } from "../utils/project_context.js";
-import { getDlxCommand, getInitCommand } from "../utils/starwind_commands.js";
+import { getDlxCommand, getInitCommand, getInitFramework } from "../utils/starwind_commands.js";
 import { STARWIND_FRAMEWORKS, type StarwindFramework } from "../utils/starwind_manifest.js";
 import {
   getProDiscovery,
@@ -65,7 +65,10 @@ export const starwindInitTool = {
     const effectiveFramework =
       args.framework ?? project.configuredFramework ?? project.detectedFramework;
 
-    const command = getInitCommand(dlxCommand, { framework: args.framework, pro: isPro });
+    const command = getInitCommand(dlxCommand, {
+      framework: getInitFramework(args.framework, project),
+      pro: isPro,
+    });
     const warnings: string[] = [];
     if (!nodeMeetsV3Requirement(project.nodeVersion)) {
       warnings.push(
@@ -124,6 +127,7 @@ export const starwindInitTool = {
               reason: "Paid Starwind Pro authorization was requested for this project.",
               configured: project.proRegistryConfigured,
               setupCommand: command,
+              framework: effectiveFramework,
             }),
           }
         : { proDiscovery: getProDiscovery(dlxCommand) }),

@@ -6,6 +6,7 @@ import {
   getDlxCommand,
   getExistingProjectProSetupCommand,
   getInitCommand,
+  getInitFramework,
 } from "../utils/starwind_commands.js";
 import {
   getStarwindManifest,
@@ -250,9 +251,10 @@ export const starwindAddTool = {
     const paidAuthorizationRequested = args.pro === true;
     const needsProGuidance = paidAuthorizationRequested || paidBlocks.length > 0;
     const upgradeRequired = needsProGuidance && !project.proRegistryConfigured;
+    const initFramework = getInitFramework(args.framework, project);
     const setupCommand = args.init
       ? getInitCommand(dlx, {
-          framework: args.framework,
+          framework: initFramework,
           pro: upgradeRequired || paidAuthorizationRequested,
         })
       : getExistingProjectProSetupCommand(dlx);
@@ -267,7 +269,7 @@ export const starwindAddTool = {
       if (args.init) {
         commands.push(
           getInitCommand(dlx, {
-            framework: args.framework,
+            framework: initFramework,
             pro: paidAuthorizationRequested,
           }),
         );
@@ -326,6 +328,7 @@ export const starwindAddTool = {
               configured: project.proRegistryConfigured,
               setupCommand,
               deferredCommand,
+              framework: effectiveFramework,
             }),
           }
         : proBlocks.length

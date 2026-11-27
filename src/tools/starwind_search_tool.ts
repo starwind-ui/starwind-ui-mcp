@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-import { inspectStarwindProject } from "../utils/project_context.js";
+import { detectPackageManager } from "../utils/package_manager.js";
+import {
+  getProjectStyledImportPath,
+  inspectStarwindProject,
+  type StarwindProjectContext,
+} from "../utils/project_context.js";
+import { getDlxCommand } from "../utils/starwind_commands.js";
 import {
   getStarwindManifest,
   resetStarwindManifestCache,
@@ -53,10 +59,17 @@ function scoreText(
   return 0;
 }
 
+interface SearchContext {
+  dlx: string;
+  /** Present only when the caller passed cwd. */
+  project?: StarwindProjectContext;
+}
+
 function searchStyled(
   components: StarwindComponent[],
   query: string | null,
-  framework?: StarwindFramework,
+  framework: StarwindFramework | undefined,
+  context: SearchContext,
 ) {
   if (!query) return [];
   return components
@@ -73,23 +86,30 @@ function searchStyled(
     }))
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name))
-    .map(({ item }) => ({
-      name: item.name,
-      title: item.title,
-      description: item.description,
-      implementationTargets: item.implementationTargets,
-      publicImportPath: item.publicImportPath,
-      docsUrl: item.docsUrl,
-      markdownUrl: item.markdownUrl,
-      foundation: item.foundation ?? null,
-      addCommand: `npx starwind@latest add ${item.name} --yes${framework ? ` --framework ${framework}` : ""}`,
-    }));
+    .map(({ item }) => {
+      const projectImportPath = context.project
+        ? getProjectStyledImportPath(context.project, framework, item.name)
+        : null;
+      return {
+        name: item.name,
+        title: item.title,
+        description: item.description,
+        implementationTargets: item.implementationTargets,
+        publicImportPath: item.publicImportPath,
+        ...(projectImportPath ? { projectImportPath } : {}),
+        docsUrl: item.docsUrl,
+        markdownUrl: item.markdownUrl,
+        foundation: item.foundation ?? null,
+        addCommand: `${context.dlx} starwind@latest add ${item.name} --yes${framework ? ` --framework ${framework}` : ""}`,
+      };
+    });
 }
 
 function searchPrimitives(
   primitives: StarwindPrimitive[],
   query: string | null,
-  framework?: StarwindFramework,
+  framework: StarwindFramework | undefined,
+  context: SearchContext,
 ) {
   if (!query) return [];
   return primitives
@@ -122,7 +142,7 @@ function searchPrimitives(
           importSource: usage.importSource,
         })),
       runtime: item.runtime ?? null,
-      addCommand: `npx starwind@latest primitives add ${item.id} --yes${framework ? ` --framework ${framework}` : ""}`,
+      addCommand: `${context.dlx} starwind@latest primitives add ${item.id} --yes${framework ? ` --framework ${framework}` : ""}`,
     }));
 }
 
@@ -132,6 +152,13 @@ function scorePro(block: StarwindProBlock, query: string): number {
     [block.id, block.name],
     [block.description, ...block.categories, ...block.keywords],
   );
+}
+
+function withRunner(command: string, dlx: string): string {
+  // The published Pro manifest uses the canonical npx prefix; swap only that exact prefix.
+  const prefix = "npx starwind@latest ";
+  const value = command.includes("--yes") ? command : `${command} --yes`;
+  return value.startsWith(prefix) ? `${dlx} starwind@latest ${value.slice(prefix.length)}` : value;
 }
 
 function resolvePreviewUrl(previewUrl: string, baseUrl: string): string | null {
@@ -179,6 +206,10 @@ export const starwindSearchTool = {
     const offset = Math.max(0, Math.floor(args.offset ?? 0));
     const metadataPromise = getStarwindManifest();
     const project = inspectStarwindProject(args.cwd ?? process.cwd());
+    // Without cwd the generated commands keep the portable npx runner.
+    const dlx = args.cwd ? getDlxCommand(detectPackageManager({ cwd: args.cwd }).name) : "npx";
+    const context: SearchContext = { dlx, ...(args.cwd ? { project } : {}) };
+    const projectFramework = framework ?? project.configuredFramework ?? project.detectedFramework;
     const shouldSearchPro = surface !== "primitive";
     const proPromise = shouldSearchPro
       ? getStarwindProManifest()
@@ -194,11 +225,11 @@ export const starwindSearchTool = {
     const [{ manifest, source }, pro] = await Promise.all([metadataPromise, proPromise]);
 
     const styledResults =
-      surface === "primitive" ? [] : searchStyled(manifest.components, query, framework);
+      surface === "primitive" ? [] : searchStyled(manifest.components, query, framework, context);
     const primitiveResults =
       surface === "styled"
         ? []
-        : searchPrimitives(manifest.layeredDocs.primitives, query, framework);
+        : searchPrimitives(manifest.layeredDocs.primitives, query, framework, context);
     let proMatches: StarwindProBlock[] = [];
     if (pro.ok && (query || args.category || args.plan)) {
       proMatches = pro.manifest.blocks
@@ -228,28 +259,17 @@ export const starwindSearchTool = {
             frameworkSupport: ["astro"],
             paidAuthorizationRequired: block.plan === "pro",
             ...(block.plan === "free"
-              ? {
-                  installCommand: block.installCommand.includes("--yes")
-                    ? block.installCommand
-                    : `${block.installCommand} --yes`,
-                }
-              : {
-                  deferredInstallCommand: block.installCommand.includes("--yes")
-                    ? block.installCommand
-                    : `${block.installCommand} --yes`,
-                }),
+              ? { installCommand: withRunner(block.installCommand, dlx) }
+              : { deferredInstallCommand: withRunner(block.installCommand, dlx) }),
             ...(previewUrl ? { previewUrl } : {}),
           };
         })
       : [];
     const paidResults = proResults.filter((block) => block.plan === "pro");
     const totalMatches = styledResults.length + primitiveResults.length + proMatches.length;
-    const proFrameworkWarning =
-      shouldSearchPro && pro.ok
-        ? getProFrameworkWarning(
-            framework ?? project.configuredFramework ?? project.detectedFramework,
-          )
-        : undefined;
+    const proFrameworkWarning = proResults.length
+      ? getProFrameworkWarning(projectFramework)
+      : undefined;
 
     return {
       query,
@@ -298,10 +318,12 @@ export const starwindSearchTool = {
                 .map((block) => block.id)
                 .join(", ")}.`,
               configured: project.proRegistryConfigured,
+              dlxCommand: dlx,
+              framework: projectFramework,
             }),
           }
         : shouldSearchPro && pro.ok
-          ? { proDiscovery: getProDiscovery() }
+          ? { proDiscovery: getProDiscovery(dlx) }
           : {}),
       ...(proFrameworkWarning ? { proFrameworkWarning } : {}),
       message:

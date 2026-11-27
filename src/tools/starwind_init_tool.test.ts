@@ -185,4 +185,56 @@ describe("starwindInitTool", () => {
       licenseEnvironmentVariable: "STARWIND_LICENSE_KEY",
     });
   });
+
+  it("passes --framework vue for a detected Vue host so the CLI can offer the Vue upgrade", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-init-nuxt-"));
+    try {
+      writeFileSync(
+        join(cwd, "package.json"),
+        JSON.stringify({ dependencies: { nuxt: "^4", vue: "3.5.20" } }),
+      );
+      const result = await starwindInitTool.handler({ cwd, packageManager: "pnpm" });
+      expect(result).toMatchObject({
+        command: "pnpm dlx starwind@latest init --defaults --framework vue",
+        framework: "vue",
+        frameworkSource: "detected",
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps CLI auto-detection for other detected hosts", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "starwind-init-next-"));
+    try {
+      writeFileSync(
+        join(cwd, "package.json"),
+        JSON.stringify({ dependencies: { next: "^16", react: "^19" } }),
+      );
+      const result = await starwindInitTool.handler({ cwd, packageManager: "npm" });
+      expect(result.command).toBe("npx starwind@latest init --defaults");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the selected framework in the Pro new-project command", async () => {
+    const vue = await starwindInitTool.handler({
+      cwd: "/project-that-does-not-exist",
+      packageManager: "npm",
+      framework: "vue",
+      pro: true,
+    });
+    const unknown = await starwindInitTool.handler({
+      cwd: "/project-that-does-not-exist",
+      packageManager: "npm",
+      pro: true,
+    });
+    expect(vue.proUpgrade).toMatchObject({
+      newProjectCommand: "npx starwind@latest init --defaults --framework vue --pro",
+    });
+    expect(unknown.proUpgrade).toMatchObject({
+      newProjectCommand: "npx starwind@latest init --defaults --pro",
+    });
+  });
 });

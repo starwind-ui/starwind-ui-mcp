@@ -30,6 +30,8 @@ export function getProUpgrade(options: {
   configured: boolean;
   setupCommand?: string;
   deferredCommand?: string;
+  /** The selected or detected framework. The new-project command omits --framework when unknown. */
+  framework?: StarwindFramework | null;
 }) {
   const dlxCommand = options.dlxCommand ?? "npx";
   const setupCommand = options.setupCommand ?? getExistingProjectProSetupCommand(dlxCommand);
@@ -42,7 +44,7 @@ export function getProUpgrade(options: {
     purchaseUrl: "https://pro.starwind.dev/",
     installationGuideUrl: STARWIND_PRO_INSTALLATION_URL,
     setupCommand,
-    newProjectCommand: getProInitCommand(dlxCommand, "astro"),
+    newProjectCommand: getProInitCommand(dlxCommand, options.framework ?? undefined),
     licenseEnvironmentVariable: "STARWIND_LICENSE_KEY",
     ...(options.deferredCommand ? { deferredCommand: options.deferredCommand } : {}),
     steps: options.configured

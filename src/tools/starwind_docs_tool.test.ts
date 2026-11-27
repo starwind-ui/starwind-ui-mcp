@@ -282,14 +282,124 @@ describe("starwindDocsTool", () => {
       mkdirSync(legacy, { recursive: true });
 
       const withoutCwd = await starwindDocsTool.handler({ topic: "button", surface: "primitive" });
-      const styled = await starwindDocsTool.handler({ topic: "button", surface: "component", cwd });
+      // Image has no Primitive with the same name.
+      const styled = await starwindDocsTool.handler({ topic: "image", cwd });
 
       expect(withoutCwd.installedDocs).toBeUndefined();
+      expect(styled.pageType).toBe("component");
       expect(styled.installedDocs).toBeUndefined();
 
       rmSync(join(cwd, "node_modules", "@starwind-ui", "astro"), { recursive: true, force: true });
       const noDocs = await starwindDocsTool.handler({ topic: "button", surface: "primitive", cwd });
       expect(noDocs.installedDocs).toBeUndefined();
+    });
+
+    it("adds the Primitive page to a styled component with the same name", async () => {
+      const astroDocs = addPackage("astro", "1.6.0", ["primitives/button.md"]);
+      writeFileSync(join(cwd, "package.json"), JSON.stringify({ dependencies: { astro: "^5" } }));
+
+      const result = await starwindDocsTool.handler({ topic: "button", cwd });
+
+      expect(result.pageType).toBe("component");
+      expect(result.url).toBe("https://starwind.dev/docs/components/button.md");
+      expect(result.installedDocs?.path).toBe(join(astroDocs, "primitives", "button.md"));
+      expect(result.installedDocs?.note).toContain("installed Primitive page for the same name");
+    });
+
+    it("finds docs hoisted to a workspace root", async () => {
+      const vueDocs = addPackage("vue", "1.6.0", ["primitives/combobox.md"]);
+      const app = join(cwd, "apps", "web");
+      mkdirSync(app, { recursive: true });
+      writeFileSync(
+        join(app, "package.json"),
+        JSON.stringify({ dependencies: { nuxt: "^4", vue: "^3.5.21" } }),
+      );
+
+      const primitive = await starwindDocsTool.handler({
+        topic: "combobox",
+        surface: "primitive",
+        cwd: app,
+      });
+
+      expect(primitive.installedDocs?.path).toBe(join(vueDocs, "primitives", "combobox.md"));
+    });
+
+    it.each([
+      ["init-starwind", "runtime", "init-starwind.md"],
+      ["initStarwind", "auto", "init-starwind.md"],
+      ["raw-html", "auto", "raw-html.md"],
+      ["theme", "runtime", "theme.md"],
+    ] as const)("maps the Runtime topic %s to its shipped page", async (topic, surface, file) => {
+      const runtimeDocs = addPackage("runtime", "1.6.0", [
+        "README.md",
+        "init-starwind.md",
+        "raw-html.md",
+        "theme.md",
+      ]);
+
+      const result = await starwindDocsTool.handler({ topic, surface, cwd });
+
+      expect(result.pageType).toBe("runtime");
+      expect(result.installedDocs?.path).toBe(join(runtimeDocs, file));
+    });
+
+    it("returns the installed page when both website requests fail", async () => {
+      const vueDocs = addPackage("vue", "1.6.0", ["primitives/button.md"]);
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockImplementation((url: string) =>
+            Promise.resolve(
+              url.includes("ai-manifest") ? jsonResponse(aiManifestFixture) : textResponse("", 503),
+            ),
+          ),
+      );
+
+      const result = await starwindDocsTool.handler({ topic: "button", surface: "primitive", cwd });
+
+      expect(result).toMatchObject({
+        resultType: "installed",
+        url: join(vueDocs, "primitives", "button.md"),
+        documentation: "# primitives/button.md",
+      });
+
+      await expect(
+        starwindDocsTool.handler({ topic: "image", surface: "component", cwd }),
+      ).rejects.toThrow("Unable to fetch Starwind documentation");
+    });
+  });
+
+  it("ranks exact names on either surface above aliases", async () => {
+    const manifest = structuredClone(aiManifestFixture);
+    manifest.components[0].aliases.push("drawer");
+    manifest.layeredDocs.primitives.push({
+      ...manifest.layeredDocs.primitives[1],
+      id: "drawer",
+      title: "Drawer Primitive",
+      label: "Drawer",
+      docsUrl: "https://starwind.dev/docs/primitives/drawer/",
+      markdownUrl: "https://starwind.dev/docs/primitives/drawer.md",
+      aliases: ["drawer"],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation((url: string) =>
+          Promise.resolve(
+            url.includes("ai-manifest") ? jsonResponse(manifest) : textResponse(`# ${url}`),
+          ),
+        ),
+    );
+
+    const drawer = await starwindDocsTool.handler({ topic: "drawer" });
+    const button = await starwindDocsTool.handler({ topic: "button" });
+
+    expect(drawer.url).toBe("https://starwind.dev/docs/primitives/drawer.md");
+    expect(button).toMatchObject({
+      pageType: "component",
+      url: "https://starwind.dev/docs/components/button.md",
     });
   });
 });
