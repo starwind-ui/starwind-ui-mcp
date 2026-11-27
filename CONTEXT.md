@@ -20,7 +20,7 @@ This repository contains the TypeScript MCP server for Starwind UI v3. It expose
 - `starwind_init` generates v3 initialization commands for Astro, React, Vue, or Svelte. Framework override and Pro authorization are optional; Pro defaults to false.
 - `starwind_add` validates styled components, primitives, and Pro blocks, then generates the correct v3 CLI namespace and flags.
 - `starwind_search` returns separate styled, primitive, and Pro result groups with framework support, source metadata, and a discoverable upgrade path.
-- `starwind_docs` resolves exact manifest pages before falling back to filtered aggregate documentation. With `cwd`, a Primitive or Runtime topic also returns the installed docs page.
+- `starwind_docs` resolves exact manifest pages before falling back to filtered aggregate documentation. With `cwd`, a Primitive topic, a Runtime topic, or a styled component that shares a Primitive's name also returns the installed docs page. The installed page answers when the website is unavailable.
 - `starwind_migrate` generates interactive-first migration commands and review guidance for legacy Astro projects.
 
 The surface stays intent-based. Free Pro discovery includes the catalog and setup entry point. Paid results return purchase, setup, license-key, and deferred-install guidance; update and remove remain outside the public tool list.

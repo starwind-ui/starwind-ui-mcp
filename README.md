@@ -73,12 +73,15 @@ Tool calls return both readable JSON text and MCP `structuredContent`.
 - `starwind_init` targets existing Astro 5+, React 18+, Vue 3.5.21+, or Svelte 5.29+ (below 6) projects. The CLI auto-detects the framework unless you supply `framework`.
 - The `framework` input accepts `astro`, `react`, `vue`, or `svelte`. `starwind_search` also accepts `all`.
 - Project context detects Astro (with React, Vue, or Svelte islands), Vite React, Next.js, React Router, TanStack Start, Vite Vue, Nuxt, Quasar, Laravel with Inertia Vue, Vite Svelte, and SvelteKit. It also reads `framework` and `componentDirs` from `starwind.config.json`.
-- When you pass `cwd`, project context lists the docs that ship in installed `@starwind-ui/*` packages (1.6.0 and newer) under `packageDocs`. For a Primitive or Runtime topic, `starwind_docs` returns `installedDocs`, the page that matches the installed version.
+- When you pass `cwd`, project context lists the docs that ship in installed `@starwind-ui/*` packages (1.6.0 and newer) under `packageDocs`. The lookup finds packages the way Node does, so packages hoisted to a workspace root are found too.
+- With `cwd`, `starwind_docs` returns `installedDocs`, the page that matches the installed version. This works for a Primitive topic, a Runtime topic (`init-starwind`, `raw-html`, `theme`, or a controller), and a styled component that has a Primitive with the same name. If the website is unavailable, the tool returns the installed page.
+- With `cwd`, styled search results add `projectImportPath` when the project shows its host or component folder. Examples: `~/components/starwind/button` in Nuxt and `$lib/starwind/button` in SvelteKit 2. `publicImportPath` keeps the default path.
+- A detected Vue host gets `init --framework vue`. Only an explicit Vue target reaches the CLI's Vue upgrade offer when the project uses Vue below 3.5.21.
 - Free `@starwind-pro/*` catalog blocks work after ordinary initialization. Paid blocks require explicit authorization. Pass `pro: true` only when it is required.
-- Pro search, setup, and installs work in every framework. Starwind Pro blocks are Astro components. For a React, Vue, or Svelte target, results include `proFrameworkWarning`: use an Astro host for the block, or port the block.
+- Pro search, setup, and installs work in every framework. Starwind Pro blocks are Astro components. For a React, Vue, or Svelte target, results that include Pro guidance or Pro blocks add `proFrameworkWarning`: use an Astro host for the block, or port the block. `starwind_search` adds it only when it returns Pro blocks. `proUpgrade.newProjectCommand` uses the selected or detected framework.
 - Migration is interactive by default. Set `yes: true` only when backup-and-overwrite behavior is intended.
 - Package-manager and project context are detected locally when possible, and add commands pass the resolved package manager to the CLI. No tool executes the generated command.
-- The `packageManager` input accepts `npm`, `pnpm`, `yarn`, or `bun`. Detection checks lockfiles in the CLI order: `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `package-lock.json`. Bun projects get `bunx starwind@latest` commands.
+- The `packageManager` input accepts `npm`, `pnpm`, `yarn`, or `bun`. Detection checks lockfiles in the CLI order: `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `package-lock.json`. Bun projects get `bunx starwind@latest` commands. With `cwd`, `starwind_search` commands use the project's runner too.
 
 ## Upgrading from free to Pro
 
